@@ -1,0 +1,177 @@
+import AppKit
+import Network
+import SnaplineCore
+
+/// Google sign-in with the OAuth "installed app" flow: system browser + PKCE + a
+/// one-time listener on 127.0.0.1. The refresh token is kept in the Keychain.
+@MainActor
+final class GoogleAuth {
+    static let shared = GoogleAuth()
+
+    private var accessToken: String?
+    private var expiry = Date.distantPast
+
+    var isSignedIn: Bool { Keychain.get(.googleRefreshToken) != nil }
+    var email: String? { UserDefaults.standard.string(forKey: Key.googleEmail) }
+
+    private var credentials: (id: String, secret: String)? {
+        let id = Settings.string(Key.googleClientID)
+        guard !id.isEmpty, let secret = Keychain.get(.googleClientSecret), !secret.isEmpty else { return nil }
+        return (id, secret)
+    }
+
+    func signIn() async throws {
+        guard let (clientID, clientSecret) = credentials else {
+            throw UploadError(message: "Enter the Google OAuth client ID and secret first.")
+        }
+        let server = try LoopbackServer()
+        let port = try await server.start()
+        defer { server.stop() }
+
+        let redirect = "http://127.0.0.1:\(port)"
+        let verifier = PKCE.makeVerifier()
+        let state = UUID().uuidString
+        NSWorkspace.shared.open(GoogleOAuth.authorizationURL(clientID: clientID, redirectURI: redirect,
+                                                             challenge: PKCE.challenge(for: verifier), state: state))
+
+        let line = try await server.waitForCallback()
+        let code: String
+        do {
+            code = try GoogleOAuth.code(fromRequestLine: line, expectedState: state)
+            server.reply("Signed in to Snapline. You can close this tab.")
+        } catch {
+            server.reply("Snapline sign-in failed: \(error.localizedDescription)")
+            throw error
+        }
+
+        let token = try await tokenRequest([
+            "code": code, "client_id": clientID, "client_secret": clientSecret,
+            "redirect_uri": redirect, "grant_type": "authorization_code", "code_verifier": verifier,
+        ])
+        guard let refresh = token.refreshToken else { throw UploadError(message: "Google did not return a refresh token.") }
+        Keychain.set(.googleRefreshToken, refresh)
+        UserDefaults.standard.set(token.idToken.flatMap(GoogleOAuth.email(fromIDToken:)), forKey: Key.googleEmail)
+        UserDefaults.standard.removeObject(forKey: Key.driveFolderID)
+        accessToken = token.accessToken
+        expiry = Date().addingTimeInterval(TimeInterval(token.expiresIn - 60))
+    }
+
+    func signOut() async {
+        if let refresh = Keychain.get(.googleRefreshToken) {
+            var request = URLRequest(url: GoogleOAuth.revokeURL)
+            request.httpMethod = "POST"
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            _ = try? await send(request, body: GoogleOAuth.formBody(["token": refresh]))
+        }
+        Keychain.set(.googleRefreshToken, nil)
+        UserDefaults.standard.removeObject(forKey: Key.googleEmail)
+        UserDefaults.standard.removeObject(forKey: Key.driveFolderID)
+        accessToken = nil
+    }
+
+    func validAccessToken() async throws -> String {
+        if let accessToken, Date() < expiry { return accessToken }
+        guard let (clientID, clientSecret) = credentials, let refresh = Keychain.get(.googleRefreshToken) else {
+            throw UploadError(message: "Sign in to Google in Snapline Preferences → Upload.")
+        }
+        do {
+            let token = try await tokenRequest(["client_id": clientID, "client_secret": clientSecret,
+                                                "refresh_token": refresh, "grant_type": "refresh_token"])
+            accessToken = token.accessToken
+            expiry = Date().addingTimeInterval(TimeInterval(token.expiresIn - 60))
+            return token.accessToken
+        } catch let error as UploadError where error.message.contains("invalid_grant") {
+            // Revoked or expired (for example an app left in "Testing" mode for 7 days).
+            Keychain.set(.googleRefreshToken, nil)
+            UserDefaults.standard.removeObject(forKey: Key.googleEmail)
+            throw UploadError(message: "Google sign-in expired. Sign in again in Snapline Preferences → Upload.")
+        }
+    }
+
+    private func tokenRequest(_ fields: [String: String]) async throws -> GoogleOAuth.TokenResponse {
+        var request = URLRequest(url: GoogleOAuth.tokenURL)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        let (data, http) = try await send(request, body: GoogleOAuth.formBody(fields))
+        try checkStatus(data, http, "Google token request")
+        return try JSONDecoder().decode(GoogleOAuth.TokenResponse.self, from: data)
+    }
+}
+
+/// Accepts the single browser redirect from Google on 127.0.0.1:<random port>.
+private final class LoopbackServer: @unchecked Sendable {
+    private let listener: NWListener
+    private let queue = DispatchQueue(label: "snapline.oauth")
+    private var connection: NWConnection?
+    private var callback: CheckedContinuation<String, Error>?
+    private var ready: CheckedContinuation<UInt16, Error>?
+
+    init() throws {
+        let params = NWParameters.tcp
+        params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        listener = try NWListener(using: params)
+    }
+
+    func start() async throws -> UInt16 {
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<UInt16, Error>) in
+            ready = c
+            // State changes arrive on `queue`, so `ready` is only touched there after this point.
+            listener.stateUpdateHandler = { [weak self] state in
+                guard let self, let ready else { return }
+                switch state {
+                case .ready: self.ready = nil; ready.resume(returning: listener.port?.rawValue ?? 0)
+                case let .failed(error): self.ready = nil; ready.resume(throwing: error)
+                default: break
+                }
+            }
+            listener.newConnectionHandler = { [weak self] conn in self?.accept(conn) }
+            listener.start(queue: queue)
+        }
+    }
+
+    /// Waits up to 5 minutes for the redirect that carries `state=` (ignores favicon requests).
+    func waitForCallback() async throws -> String {
+        try await withCheckedThrowingContinuation { c in
+            queue.async {
+                self.callback = c
+                self.queue.asyncAfter(deadline: .now() + 300) {
+                    self.finish(.failure(UploadError(message: "Google sign-in timed out.")))
+                }
+            }
+        }
+    }
+
+    private func accept(_ conn: NWConnection) {
+        conn.start(queue: queue)
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self] data, _, _, _ in
+            guard let self else { return }
+            let line = data.flatMap { String(data: $0, encoding: .utf8) }?.components(separatedBy: "\r\n").first ?? ""
+            if line.contains("state=") || line.contains("error=") {
+                connection = conn
+                finish(.success(line))
+            } else {
+                conn.send(content: Data("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".utf8),
+                          completion: .contentProcessed { _ in conn.cancel() })
+            }
+        }
+    }
+
+    private func finish(_ result: Result<String, Error>) {
+        guard let c = callback else { return }
+        callback = nil
+        c.resume(with: result)
+    }
+
+    func reply(_ message: String) {
+        queue.async {
+            guard let conn = self.connection else { return }
+            let html = "<!doctype html><meta charset=utf-8><title>Snapline</title><body style='font:16px -apple-system;padding:40px'>\(message)"
+            let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n\(html)"
+            conn.send(content: Data(response.utf8), completion: .contentProcessed { _ in conn.cancel() })
+        }
+    }
+
+    func stop() {
+        queue.asyncAfter(deadline: .now() + 1) { self.listener.cancel() }
+    }
+}
