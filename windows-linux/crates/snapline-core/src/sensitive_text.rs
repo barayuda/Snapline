@@ -187,11 +187,12 @@ static RULES: std::sync::LazyLock<Vec<Rule>> = std::sync::LazyLock::new(|| {
 
 // MARK: - Phone numbers
 
-/// Phone-shaped runs: an optional `+country` and `(area)`, then digit groups split by single spaces, dashes or dots.
-/// Not touching letters, other digits, or `.`/`-`/`/` followed by a digit (so dates, versions and IPs end early).
+/// Phone-shaped runs: an optional `+country` and `(area)`, then digit groups split by single spaces, dashes or dots,
+/// then an optional extension (`x123`, `ext. 123`). Not touching letters, other digits, or `.`/`-`/`/` followed by a
+/// digit (so dates, versions and IPs end early).
 static PHONE: std::sync::LazyLock<fancy_regex::Regex> = std::sync::LazyLock::new(|| {
     fancy_regex::Regex::new(
-        r"(?<![\w.+\-/])(?:\+\d{1,3}[ .\-]?)?(?:\(\d{1,4}\)[ .\-]?)?\d{1,5}(?:[ .\-]\d{1,5})*(?!\w|[.\-/]\d)",
+        r"(?<![\w.+\-/])(?:\+\d{1,3}[ .\-]?)?(?:\(\d{1,4}\)[ .\-]?)?\d{1,12}(?:[ .\-]\d{1,12})*(?:\s?(?:x|ext\.?)\s?\d{1,5})?(?!\w|[.\-/]\d)",
     )
     .expect("valid pattern")
 });
@@ -206,6 +207,7 @@ fn phone_numbers(text: &str) -> impl Iterator<Item = Range<usize>> + '_ {
 }
 
 fn is_phone_number(s: &str) -> bool {
+    let s = s.split(['x', 'e']).next().unwrap_or(s); // the extension does not count
     let groups: Vec<usize> = s
         .split(|c: char| !c.is_ascii_digit())
         .filter(|g| !g.is_empty())
@@ -219,7 +221,8 @@ fn is_phone_number(s: &str) -> bool {
         return false;
     }
     if groups.len() == 1 {
-        return s.starts_with('+'); // a lone run of digits is an order or account number
+        // 081234567890 or +6281234567890; a shorter lone run is an order number or a date (20261028)
+        return s.starts_with('+') || digits >= 10;
     }
     if last < 3 {
         return false; // 2026-10-28

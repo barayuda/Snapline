@@ -521,6 +521,127 @@
           "+1 415 555 0132"
         ]
       ]
+    },
+    {
+      "name": "phone that must be hidden: E.164 without spaces",
+      "text": [
+        "Call +14155550132 now"
+      ],
+      "hidden": [
+        [
+          "+14155550132"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: Indonesian mobile in E.164",
+      "text": [
+        "WA +6281234567890 ok"
+      ],
+      "hidden": [
+        [
+          "+6281234567890"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: country code then one long group",
+      "text": [
+        "Call +62 81234567890 now"
+      ],
+      "hidden": [
+        [
+          "+62 81234567890"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: Indonesian mobile without separators",
+      "text": [
+        "HP 081234567890 ok"
+      ],
+      "hidden": [
+        [
+          "081234567890"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: US number without separators",
+      "text": [
+        "Call 4155550132 now"
+      ],
+      "hidden": [
+        [
+          "4155550132"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: mobile with one dash",
+      "text": [
+        "HP 0812-34567890 ok"
+      ],
+      "hidden": [
+        [
+          "0812-34567890"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: Jakarta landline with one dash",
+      "text": [
+        "Tel 021-5551234 ok"
+      ],
+      "hidden": [
+        [
+          "021-5551234"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: Bali landline with one dash",
+      "text": [
+        "Tel 0361-754444 ok"
+      ],
+      "hidden": [
+        [
+          "0361-754444"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: area code in brackets, long group",
+      "text": [
+        "Tel (0361) 754444 ok"
+      ],
+      "hidden": [
+        [
+          "(0361) 754444"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: landline with a space",
+      "text": [
+        "Tel: 021 5551234"
+      ],
+      "hidden": [
+        [
+          "021 5551234"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: US number with extension",
+      "text": [
+        "Call 415-555-0132x123 today"
+      ],
+      "hidden": [
+        [
+          "415-555-0132x123"
+        ]
+      ]
     }
   ]
 }
