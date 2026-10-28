@@ -50,10 +50,12 @@ identity_hash() {  # SHA-1 of the first code-signing identity whose name contain
 SIGN_ID="${SNAPLINE_SIGN_IDENTITY:-}"
 [[ -z "$SIGN_ID" ]] && SIGN_ID="$(identity_hash "Apple Development")"
 [[ -z "$SIGN_ID" ]] && SIGN_ID="$(identity_hash "Snapline Local Signing")"
-if [[ -n "$SIGN_ID" ]]; then
-  codesign --force --sign "$SIGN_ID" --identifier dev.barayuda.snapline "$APP"
+if [[ -n "$SIGN_ID" ]] && codesign --force --sign "$SIGN_ID" --identifier dev.barayuda.snapline "$APP"; then
   echo "Signed with: $(security find-identity -p codesigning | grep -m1 "$SIGN_ID" | sed -E 's/.*"(.*)".*/\1/')"
 else
+  [[ -n "$SIGN_ID" ]] && echo "Could not sign with the certificate (see the message above); falling back to ad hoc." \
+    "If it says 'unable to build chain', add Apple's WWDR G3 intermediate certificate; if errSecInternalComponent," \
+    "run this script once in Terminal and allow codesign to use the key. See README → Keep permissions across rebuilds."
   codesign --force --sign - --identifier dev.barayuda.snapline "$APP"
   echo "Signed ad hoc: macOS will ask for Screen Recording again after each rebuild."
 fi

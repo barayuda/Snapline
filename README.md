@@ -50,6 +50,12 @@ It prints which one it used. Create one of these once:
 2. Select the account, click **Manage Certificates…**, then **+** → **Apple Development**.
 3. Run `scripts/make-app.sh --install`. It should print `Signed with: Apple Development: …`.
 
+   If it prints `unable to build chain to self-signed root`, your Keychain is missing Apple's intermediate certificate:
+   download **Worldwide Developer Relations - G3** from <https://www.apple.com/certificateauthority/> and double-click
+   it to add it to the **login** keychain. `security find-identity -v -p codesigning` should then list it as valid.
+   If it prints `errSecInternalComponent`, macOS needs your OK to use the key: run the script once in **Terminal**,
+   enter your login password in the dialog and click **Always Allow**.
+
 **Option B: self-signed certificate (no Apple Account)**
 1. Open **Keychain Access** → menu **Keychain Access → Certificate Assistant → Create a Certificate…**
 2. Name: `Snapline Local Signing`, Identity Type: **Self Signed Root**, Certificate Type: **Code Signing** → Create.
