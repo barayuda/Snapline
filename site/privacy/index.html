@@ -8,8 +8,10 @@
   <link rel="canonical" href="https://snapline.barayuda.web.id/privacy/">
   <link rel="icon" href="/assets/favicon-64.png" type="image/png">
   <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
-  <meta name="theme-color" content="#f6f5fb">
+  <meta name="theme-color" content="#f6f5fb" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0c0819" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="/styles.css">
+  <script src="/theme.js"></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -17,11 +19,18 @@
   <header class="site-header">
     <div class="wrap">
       <a class="brand" href="/"><img src="/assets/icon-256.png" alt="" width="36" height="36">Snapline</a>
-      <nav class="site-nav" aria-label="Site">
-        <a href="/privacy/" aria-current="page">Privacy</a>
-        <a href="/terms/">Terms</a>
-        <a href="https://github.com/barayuda/Snapline">GitHub</a>
-      </nav>
+      <div class="header-end">
+        <nav class="site-nav" aria-label="Site">
+          <a href="/privacy/" aria-current="page">Privacy</a>
+          <a href="/terms/">Terms</a>
+          <a href="https://github.com/barayuda/Snapline">GitHub</a>
+        </nav>
+        <div class="theme" role="group" aria-label="Colour theme">
+          <button type="button" data-theme-choice="system" aria-pressed="true" aria-label="System" title="Follow system"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.75" y="2.5" width="12.5" height="8.5" rx="1.5"/><path d="M5.5 14h5M8 11v3"/></svg></button>
+          <button type="button" data-theme-choice="light" aria-pressed="false" aria-label="Light" title="Light"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.25v1.5M8 13.25v1.5M1.25 8h1.5M13.25 8h1.5M3.2 3.2l1.06 1.06M11.74 11.74l1.06 1.06M3.2 12.8l1.06-1.06M11.74 4.26l1.06-1.06"/></svg></button>
+          <button type="button" data-theme-choice="dark" aria-pressed="false" aria-label="Dark" title="Dark"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M13.75 9.6A5.75 5.75 0 0 1 6.4 2.25a5.75 5.75 0 1 0 7.35 7.35z"/></svg></button>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -72,7 +81,7 @@
       <p>If you use an S3-compatible bucket, your access key and secret are stored in the macOS Keychain. They are used only to sign upload requests sent directly to the endpoint you entered, over HTTPS.</p>
 
       <h2>This website</h2>
-      <p>This website is a set of static pages. It uses no cookies, no analytics and no third-party scripts or fonts. It is hosted on Netlify, which may keep standard server logs, such as IP addresses and browser type, to run and protect the service. See <a href="https://www.netlify.com/privacy/">Netlify's privacy policy</a>.</p>
+      <p>This website is a set of static pages. It uses no cookies, no analytics and no third-party scripts or fonts. If you pick light or dark mode with the theme switch, your browser remembers that choice in its own storage; it is never sent to us. It is hosted on Netlify, which may keep standard server logs, such as IP addresses and browser type, to run and protect the service. See <a href="https://www.netlify.com/privacy/">Netlify's privacy policy</a>.</p>
 
       <h2>Children</h2>
       <p>Snapline is not directed at children under 13, and we do not knowingly collect any data from them. Snapline does not collect personal data from anyone.</p>

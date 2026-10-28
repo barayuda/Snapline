@@ -14,8 +14,10 @@
   <meta property="og:url" content="https://snapline.barayuda.web.id/">
   <meta property="og:image" content="https://snapline.barayuda.web.id/assets/og.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="theme-color" content="#f6f5fb">
+  <meta name="theme-color" content="#f6f5fb" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0c0819" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="/styles.css">
+  <script src="/theme.js"></script>
   <script src="/hero.js" defer></script>
 </head>
 <body>
@@ -24,11 +26,18 @@
   <header class="site-header">
     <div class="wrap">
       <a class="brand" href="/"><img src="/assets/icon-256.png" alt="" width="36" height="36">Snapline</a>
-      <nav class="site-nav" aria-label="Site">
-        <a href="/privacy/">Privacy</a>
-        <a href="/terms/">Terms</a>
-        <a href="https://github.com/barayuda/Snapline">GitHub</a>
-      </nav>
+      <div class="header-end">
+        <nav class="site-nav" aria-label="Site">
+          <a href="/privacy/">Privacy</a>
+          <a href="/terms/">Terms</a>
+          <a href="https://github.com/barayuda/Snapline">GitHub</a>
+        </nav>
+        <div class="theme" role="group" aria-label="Colour theme">
+          <button type="button" data-theme-choice="system" aria-pressed="true" aria-label="System" title="Follow system"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.75" y="2.5" width="12.5" height="8.5" rx="1.5"/><path d="M5.5 14h5M8 11v3"/></svg></button>
+          <button type="button" data-theme-choice="light" aria-pressed="false" aria-label="Light" title="Light"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.25v1.5M8 13.25v1.5M1.25 8h1.5M13.25 8h1.5M3.2 3.2l1.06 1.06M11.74 11.74l1.06 1.06M3.2 12.8l1.06-1.06M11.74 4.26l1.06-1.06"/></svg></button>
+          <button type="button" data-theme-choice="dark" aria-pressed="false" aria-label="Dark" title="Dark"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M13.75 9.6A5.75 5.75 0 0 1 6.4 2.25a5.75 5.75 0 1 0 7.35 7.35z"/></svg></button>
+        </div>
+      </div>
     </div>
   </header>
 
