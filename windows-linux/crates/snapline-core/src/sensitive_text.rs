@@ -353,7 +353,7 @@ mod tests {
             hidden(text, &[SensitiveCategory::Secret]),
             ["AKIAIOSFODNN7EXAMPLE"]
         );
-        assert!(hidden(text, &[]).is_empty());
+        assert_eq!(hidden(text, &[]), [] as [&str; 0]);
     }
 
     #[test]
