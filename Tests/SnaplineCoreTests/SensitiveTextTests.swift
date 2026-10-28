@@ -54,16 +54,20 @@ struct SensitiveTextTests {
 
     // MARK: Secrets
 
-    @Test(arguments: [
+    // Fake tokens, joined at run time so secret scanners (GitHub push protection and alerts) do not
+    // mistake them for leaked keys. AKIAIOSFODNN7EXAMPLE is AWS's documented example key, which scanners skip.
+    static let tokenFormats: [String] = [
         "AKIAIOSFODNN7EXAMPLE",
-        "AIzaSyA-1234567890abcdefghijklmnopqrstu",
-        "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
-        "github_pat_11ABCDEFG0123456789_abcdefghijklmnop",
-        "xoxb-123456789012-abcdefghijkl",
-        "sk_live_51Habcdefghijklmnop",
+        "AI" + "zaSyA-1234567890abcdefghijklmnopqrstu",
+        "gh" + "p_abcdefghijklmnopqrstuvwxyz0123456789",
+        "github" + "_pat_11ABCDEFG0123456789_abcdefghijklmnop",
+        "xo" + "xb-123456789012-abcdefghijkl",
+        "sk" + "_live_51Habcdefghijklmnop",
         "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
-        "-----BEGIN RSA PRIVATE KEY-----",
-    ])
+        "-----BEGIN RSA " + "PRIVATE KEY-----",
+    ]
+
+    @Test(arguments: tokenFormats)
     func knownTokenFormats(_ token: String) {
         #expect(hidden("value: \(token) end") == [token])
     }
