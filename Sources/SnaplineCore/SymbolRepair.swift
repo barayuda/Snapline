@@ -8,40 +8,149 @@ import Foundation
 /// replaces the character only when it clearly matches better. If the pieces do not line up one-to-one
 /// with the characters, the word is left as it was.
 public enum SymbolRepair {
-    /// What text recognition returns instead of the symbols below (seen in testing on macOS 27;
-    /// ⌘ comes back as "9", "%", "&" or "#" depending on size and crop).
-    static let suspects: Set<Character> = ["+", "9", "T", "1", "2", "^", "V", "v", "5", "O", "o", "<", ">", "t", "8", "X", "x", "*", "→", "←", "%", "&", "#", "@", "B"]
-    static let symbols: [Character] = ["⌘", "⇧", "⌥", "⌃", "↩", "⎋", "⇥", "⌫", "↑", "↓", "←", "→", "✓"]
+    /// What text recognition returns instead of the symbols below (measured on macOS 27 at 15–44 pt):
+    /// ⌘ → 9 % & #, ⇧ → + 4, ⌥ → T 1 2, ⌃ → ^, ⎋ → 5 O D, ⌦ → ® x, ⇪ → & |, ⏎ → &, ⇤ → « I, ⇞ ⇟ → # ‡,
+    /// ↖ → &, ↘ → y, ⏏ → &, ↩ → + P, ≠ → ‡ *, ± → +, ✓ → v, ↑ ↓ → 1 V.
+    static let suspects: Set<Character> = [
+        "+", "9", "T", "1", "2", "^", "V", "v", "5", "O", "o", "<", ">", "t", "8", "X", "x", "*", "→", "←",
+        "%", "&", "#", "@", "B", "4", "D", "®", "|", "«", "I", "‡", "y", "P",
+    ]
+    /// Mac key symbols plus a few text symbols. × and ✗ are left out on purpose: they look too much like a
+    /// real "x" to tell apart safely, and a wrong replacement is worse than none.
+    static let symbols: [Character] = ["⌘", "⇧", "⌥", "⌃", "↩", "⏎", "⎋", "⇥", "⇤", "⌫", "⌦", "⇪", "⇞", "⇟", "↖", "↘",
+                                       "⏏", "↑", "↓", "←", "→", "✓", "≠", "±"]
 
     /// A symbol must score at least this, and beat the read character by `margin`.
-    static let minimumScore: Float = 0.55
+    static let minimumScore: Float = 0.45
     static let margin: Float = 0.10
+    /// A symbol that beats the read character but not clearly, scoring at least this, asks for review.
+    static let reviewScore: Float = 0.35
+    /// Symbols drawn as two separate shapes (a bar and an arrow), so they split into two pieces.
+    static let twoPartSymbols: Set<Character> = ["⇤", "⇥"]
+
+    public struct Check: Equatable, Sendable {
+        public let text: String
+        /// The word may contain a symbol that could not be checked; ask the user to review it.
+        public let uncertain: Bool
+    }
+
+    /// The symbols Snapline knows, for the review panel's palette.
+    public static var palette: [Character] { symbols }
 
     public static func hasSuspects(_ word: Substring) -> Bool { word.contains(where: suspects.contains) }
 
     /// `crop` shows exactly this word (any colours, light or dark background).
-    public static func repair(_ word: String, in crop: CGImage) -> String {
+    public static func repair(_ word: String, in crop: CGImage) -> String { check(word, in: crop).text }
+
+    public static func check(_ word: String, in crop: CGImage) -> Check {
         let chars = Array(word)
-        guard chars.contains(where: suspects.contains) else { return word }
+        guard chars.contains(where: suspects.contains) else { return Check(text: word, uncertain: false) }
         let ink = Ink(crop)
         var pieces = ink.columnRuns()
         // Thin slivers touching the crop edge belong to the neighbouring word.
         let widest = pieces.map(\.count).max() ?? 0
         pieces.removeAll { ($0.lowerBound == 0 || $0.upperBound == ink.width) && $0.count * 4 < widest }
-        guard pieces.count == chars.count else { return word }
 
-        var out = chars
+        if pieces.count == chars.count { return classify(chars, pieces, ink).check }
+        if pieces.count == chars.count + 1 {
+            // ⇤ and ⇥ split into two pieces: try merging each neighbouring pair, and keep the merge only
+            // when the merged piece really is one of those symbols.
+            for i in 0..<(pieces.count - 1) {
+                var merged = pieces
+                merged[i] = pieces[i].lowerBound..<pieces[i + 1].upperBound
+                merged.remove(at: i + 1)
+                let result = classify(chars, merged, ink)
+                if let symbol = result.symbols[i], twoPartSymbols.contains(symbol) { return result.check }
+            }
+        }
+        // No safe mapping: leave the word, but ask for review when the image clearly shows a symbol.
+        // The piece must also look more like that symbol than like any character of the word itself.
+        let ownCharacters = Set(chars)
+        let showsSymbol = pieces.contains { piece in
+            guard let symbol = clearSymbol(ink, piece), let shape = ink.shape(columns: piece) else { return false }
+            let symbolScore = bestScore(shape, symbol)
+            return ownCharacters.allSatisfy { bestScore(shape, $0) < symbolScore - margin }
+        }
+        return Check(text: word, uncertain: showsSymbol)
+    }
+
+    private static func classify(_ chars: [Character], _ pieces: [Range<Int>], _ ink: Ink)
+        -> (check: Check, symbols: [Int: Character]) {
+        var out = chars.map(String.init)
+        var symbols: [Int: Character] = [:]
+        var uncertain = false
         for (i, ch) in chars.enumerated() where suspects.contains(ch) {
             guard let glyph = ink.shape(columns: pieces[i]) else { continue }
             let readScore = bestScore(glyph, ch)
-            let best = symbols.filter { $0 != ch }
-                .map { ($0, bestScore(glyph, $0)) }
-                .max { $0.1 < $1.1 }
-            if let (symbol, score) = best, score >= minimumScore, score > readScore + margin {
-                out[i] = symbol
+            guard let (symbol, score) = Self.symbols.filter({ $0 != ch })
+                .map({ ($0, bestScore(glyph, $0)) })
+                .max(by: { $0.1 < $1.1 }) else { continue }
+            if score >= minimumScore, score > readScore + margin {
+                out[i] = String(symbol)
+                symbols[i] = symbol
+            } else if score > readScore, score >= reviewScore {
+                uncertain = true
             }
         }
-        return String(out)
+        // Text recognition sometimes drops the space between two symbols ("⌥ ⌃" read as "T^").
+        // Put it back when the gap is as wide as a space and a symbol is on either side.
+        let spaceGap = CGFloat(ink.inkHeight()) * 0.3
+        var text = ""
+        for i in out.indices {
+            if i > 0, symbols[i] != nil || symbols[i - 1] != nil,
+               CGFloat(pieces[i].lowerBound - pieces[i - 1].upperBound) > spaceGap {
+                text += " "
+            }
+            text += out[i]
+        }
+        return (Check(text: text, uncertain: uncertain), symbols)
+    }
+
+    /// A glyph between two recognised words that no word covers: text recognition skipped it.
+    public struct Dropped: Equatable, Sendable {
+        /// Index (in `keptWords`) of the word it follows; -1 when it comes before the first word.
+        public let afterWord: Int
+        /// The symbol(s) it clearly matches, or nil when unknown (the user should check it).
+        public let symbol: String?
+    }
+
+    /// `line`: image of one recognised line. `keptWords`: pixel column spans of the words Vision returned.
+    public static func droppedSymbols(in line: CGImage, keptWords: [Range<Int>]) -> [Dropped] {
+        let ink = Ink(line)
+        let lineHeight = ink.inkHeight()
+        let spaceGap = Int(Double(lineHeight) * 0.3)
+        // Glyph-sized ink outside every kept word (2 px tolerance for tight word boxes).
+        let loose = ink.columnRuns().filter { run in
+            !keptWords.contains { $0.lowerBound - 2 < run.upperBound && run.lowerBound < $0.upperBound + 2 }
+                && ink.inkHeight(columns: run) * 100 >= lineHeight * 35
+        }
+        // Neighbouring runs closer than a space belong to one dropped word ("⇧⌘", or the two parts of "⇤").
+        var groups: [[Range<Int>]] = []
+        for run in loose {
+            if let last = groups.last?.last, run.lowerBound - last.upperBound < spaceGap {
+                groups[groups.count - 1].append(run)
+            } else {
+                groups.append([run])
+            }
+        }
+        return groups.map { group in
+            let afterWord = keptWords.filter { $0.upperBound <= group[0].lowerBound }.count - 1
+            // Whole group as one symbol (⇤ ⇥), else each run on its own; any unknown run makes it unknown.
+            if group.count > 1, let whole = clearSymbol(ink, group[0].lowerBound..<group[group.count - 1].upperBound) {
+                return Dropped(afterWord: afterWord, symbol: String(whole))
+            }
+            let symbols = group.map { clearSymbol(ink, $0) }
+            return Dropped(afterWord: afterWord,
+                           symbol: symbols.contains(nil) ? nil : String(symbols.compactMap { $0 }))
+        }
+    }
+
+    /// A symbol only when it matches well and clearly better than every other symbol.
+    private static func clearSymbol(_ ink: Ink, _ columns: Range<Int>) -> Character? {
+        guard let shape = ink.shape(columns: columns) else { return nil }
+        let ranked = symbols.map { ($0, bestScore(shape, $0)) }.sorted { $0.1 > $1.1 }
+        guard ranked[0].1 >= 0.6, ranked[0].1 - ranked[1].1 >= 0.08 else { return nil }
+        return ranked[0].0
     }
 
     // MARK: - Shapes
@@ -65,7 +174,7 @@ public enum SymbolRepair {
         return lo / hi * (0.6 + 0.4 * aspect)
     }
 
-    /// Best match against the character drawn in the regular and the bold system font.
+    /// Best match against the character drawn in the regular, bold and monospaced system fonts.
     static func bestScore(_ shape: Shape, _ ch: Character) -> Float {
         templates(ch).map { similarity(shape, $0) }.max() ?? 0
     }
@@ -77,7 +186,11 @@ public enum SymbolRepair {
         lock.lock()
         defer { lock.unlock() }
         if let cached = cache[ch] { return cached }
-        let shapes = [CTFontUIFontType.system, .emphasizedSystem].compactMap { type -> Shape? in
+        // Monospaced letters and digits for code text ("1" has a flag and a foot there). Not for punctuation:
+        // a monospaced "^" is drawn as large as ⌃ and would hide it.
+        let fonts: [CTFontUIFontType] = ch.isLetter || ch.isNumber ? [.system, .emphasizedSystem, .userFixedPitch]
+                                                                   : [.system, .emphasizedSystem]
+        let shapes = fonts.compactMap { type -> Shape? in
             let ink = Ink(render(String(ch), size: 64, foreground: 1, background: 0, font: type))
             return ink.shape(columns: 0..<ink.width)
         }
@@ -131,6 +244,14 @@ struct Ink {
     }
 
     func at(_ x: Int, _ y: Int) -> Float { values[y * width + x] }
+
+    /// Height of the rows that contain ink (the text height of the word), optionally within some columns.
+    func inkHeight(columns: Range<Int>? = nil, threshold: Float = 0.35) -> Int {
+        let cols = columns ?? 0..<width
+        let rows = (0..<height).filter { y in cols.contains { at($0, y) > threshold } }
+        guard let first = rows.first, let last = rows.last else { return 0 }
+        return last - first + 1
+    }
 
     /// Runs of columns that contain ink: normally one per glyph.
     func columnRuns(threshold: Float = 0.35) -> [Range<Int>] {

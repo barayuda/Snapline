@@ -64,8 +64,8 @@ public enum ReadingOrder {
         guard abs(above.box.minX - row.box.minX) < h * 2,
               above.box.minY - row.box.maxY < h * 0.8,
               above.box.width >= widest * 0.6,
-              let first = row.text.first, first.isLowercase || SymbolRepair.symbols.contains(first),
-              let last = above.text.last, !".!?:".contains(last) else { return false }
+              let first = UncertainMarks.strip(row.text).first, first.isLowercase || SymbolRepair.symbols.contains(first),
+              let last = UncertainMarks.strip(above.text).last, !".!?:".contains(last) else { return false }
         return true
     }
 }

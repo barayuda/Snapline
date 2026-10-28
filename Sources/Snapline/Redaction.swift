@@ -14,6 +14,9 @@ enum Redaction {
             let text = VNRecognizeTextRequest()
             text.recognitionLevel = .accurate
             text.usesLanguageCorrection = false  // keep tokens and codes as they are
+            text.recognitionLanguages = RecognitionLanguages.pick(
+                preferred: Locale.preferredLanguages,
+                supported: (try? text.supportedRecognitionLanguages()) ?? ["en-US"])
             let faces = VNDetectFaceRectanglesRequest()
 
             var requests: [VNRequest] = []

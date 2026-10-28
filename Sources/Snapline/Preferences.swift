@@ -65,6 +65,7 @@ private struct BrandHeader: View {
 private struct GeneralTab: View {
     @AppStorage(Key.hotKeyDisplay) private var hotKeyDisplay = "⇧⌘1"
     @AppStorage(Key.downscaleRetina) private var downscaleRetina = false
+    @AppStorage(Key.copyShortcutsAsWords) private var copyShortcutsAsWords = false
     @AppStorage(Key.editorAppPath) private var editorAppPath = "/System/Applications/Preview.app"
     @AppStorage(Key.saveDirectory) private var saveDirectory = Settings.saveDirectory.path
     @State private var recording = false
@@ -103,6 +104,11 @@ private struct GeneralTab: View {
             if let loginError { Text(loginError).foregroundStyle(.red).font(.caption) }
 
             Toggle("Downscale Retina screens (save at 1× size)", isOn: $downscaleRetina)
+
+            Toggle(isOn: $copyShortcutsAsWords) {
+                Text("Copy Text: write keyboard symbols as words")
+                Text("⇧⌘C becomes Shift+Cmd+C, for apps or forms that show symbols as boxes.")
+            }
 
             LabeledContent("Edit with") {
                 HStack {

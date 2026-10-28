@@ -10,7 +10,9 @@ if CommandLine.arguments.count == 3, ["--scan", "--text"].contains(CommandLine.a
     }
     Task {
         if CommandLine.arguments[1] == "--text" {
-            print(await TextExtraction.text(in: image))
+            // Marked spots (the review panel would highlight these) are shown as ⟦…⟧.
+            let marked = await TextExtraction.text(in: image)
+            print(marked.replacingOccurrences(of: "\u{E000}", with: "⟦").replacingOccurrences(of: "\u{E001}", with: "⟧"))
             exit(0)
         }
         let size = CGSize(width: image.width, height: image.height)

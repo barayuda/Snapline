@@ -49,7 +49,7 @@ On the first capture macOS asks for **Screen Recording** permission (System Sett
 | Text | Text tool, click, type, Return. Scroll while typing to change size. Drag a finished text with the text tool to move it |
 | Undo | ⌘Z |
 | Copy image | ⌘C or Return |
-| Copy text | ⇧⌘C or the text button: reads the text in the selection on your Mac and copies it as plain text, in reading order, with wrapped lines joined back into sentences. Keyboard symbols (⌘ ⇧ ⌥ ⌃ ↩ ⎋ ↑ ↓ ✓…), which Apple's text recognition cannot read, are restored by comparing their shapes. Hidden areas are not read |
+| Copy text | ⇧⌘C or the text button: reads the text in the selection on your Mac and copies it as plain text, in reading order, with wrapped lines joined back into sentences. Keyboard symbols (⌘ ⇧ ⌥ ⌃ ↩ ⏎ ⎋ ⇥ ⇤ ⌫ ⌦ ⇪ ⇞ ⇟ ↖ ↘ ⏏ ↑ ↓ ← → ✓ ≠ ±), which Apple's text recognition cannot read, are restored by comparing their shapes, and symbols it skipped are put back. If something could not be read for sure, a review panel shows it highlighted, with a symbol palette, before anything is copied. Hidden areas are not read |
 | Save | ⌘S saves straight to the folder set in Preferences → General (Desktop by default) as `Screenshot at MMM dd HH-mm-ss.png`; never overwrites. ⌥⌘S (or ⌥-click Save) opens a Save As dialog |
 | Upload | ⌘D. The link is copied to the clipboard |
 | Edit in another app | ⌘E (Preview by default; choose another app in Preferences) |
@@ -67,7 +67,13 @@ When the screen freezes, Snapline reads it with Apple's on-device text recogniti
 - The boxes are merged into the pixels of everything you copy, save, print, edit, email or upload.
 - **It is a safety net, not a guarantee.** Very small, faint, rotated or stylised text can be missed. Check the image before you share it. Use the Hide tool (H) for anything it missed.
 
-To check what auto-hide would cover, or what Copy Text would copy, in an image without capturing the screen:
+Copied symbols are standard Unicode, so they paste the same on any computer whose fonts have them (macOS shows all; Windows 10/11
+and most Linux desktops show the common ones). For places that show boxes, turn on **Preferences → General → Copy Text: write
+keyboard symbols as words** (⇧⌘C becomes Shift+Cmd+C). Text is read in the languages set in System Settings → Language & Region,
+with English as a fallback.
+
+To check what auto-hide would cover, or what Copy Text would copy (spots for review shown as ⟦…⟧), in an image without capturing
+the screen:
 
 ```bash
 .build/debug/Snapline --scan some-image.png
