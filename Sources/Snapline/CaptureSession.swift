@@ -59,13 +59,15 @@ final class CaptureSession: NSObject {
 
     func show() {
         NSApp.activate()
+        windows.forEach { $0.orderFrontRegardless() }
+        // Keyboard goes to the screen under the pointer; fall back to the main screen, then the first one.
         let mouse = NSEvent.mouseLocation
-        for (window, view) in zip(windows, views) {
-            window.orderFrontRegardless()
-            if NSMouseInRect(mouse, window.frame, false) {
-                window.makeKey()
-                window.makeFirstResponder(view)
-            }
+        let index = windows.firstIndex { NSMouseInRect(mouse, $0.frame, false) }
+            ?? windows.firstIndex { $0.screen == NSScreen.main }
+            ?? 0
+        if windows.indices.contains(index) {
+            windows[index].makeKeyAndOrderFront(nil)
+            windows[index].makeFirstResponder(views[index])
         }
         NSCursor.crosshair.set()
     }
@@ -111,9 +113,13 @@ final class CaptureSession: NSObject {
     }
 }
 
-final class OverlayWindow: NSWindow {
+/// A non-activating panel: it takes keyboard input (Esc, ⌘C…) as soon as it appears, even when
+/// macOS declines to activate Snapline, e.g. after a click on the menu bar icon.
+final class OverlayWindow: NSPanel {
     init(screen: NSScreen) {
-        super.init(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        super.init(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        becomesKeyOnlyIfNeeded = false
+        hidesOnDeactivate = false
         level = CaptureSession.overlayLevel
         isOpaque = true
         hasShadow = false
