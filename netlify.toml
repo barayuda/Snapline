@@ -1,4 +1,7 @@
+# The website lives in site/. Building from there keeps Netlify from seeing Package.swift
+# and trying to install Swift (it would fail, and nothing here needs building).
 [build]
-  publish = "site"
-  # Deploy only when the website changes, not on app-only pushes. (Exit 0 = nothing changed = skip.)
-  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- site/ netlify.toml"
+  base = "site"
+  publish = "/"   # relative to base, so this is site/ itself
+  # Runs from site/: deploy only when the website or this file changed. (Exit 0 = no change = skip.)
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ../netlify.toml"
