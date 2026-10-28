@@ -21,6 +21,7 @@ enum Key {
     static let driveFolderID = "driveFolderID"
     static let saveDirectory = "saveDirectory"        // folder path for ⌘S
     static let copyShortcutsAsWords = "copyShortcutsAsWords"
+    static let screenPermissionAskedForBuild = "screenPermissionAskedForBuild"
 
     static func autoHide(_ c: SensitiveCategory) -> String { "autoHide.\(c.rawValue)" }
 }

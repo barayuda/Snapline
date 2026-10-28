@@ -63,21 +63,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 session = s
                 s.show()
             } catch is Capture.PermissionError {
-                let alert = NSAlert()
-                alert.messageText = "Snapline needs Screen Recording permission."
-                alert.informativeText = "Turn on Snapline in System Settings → Privacy & Security → Screen & System Audio Recording, then try again."
-                alert.addButton(withTitle: "Open System Settings")
-                alert.addButton(withTitle: "Cancel")
-                NSApp.activate()
-                if alert.runModal() == .alertFirstButtonReturn {
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
-                }
+                askForScreenRecording()
             } catch {
                 NSApp.activate()
                 NSAlert(error: error).runModal()
             }
         }
     }
+
+    /// One dialog at a time. The first time a build lacks the permission, let macOS show its own prompt
+    /// (it also adds Snapline to the list in System Settings). macOS shows that prompt only once per
+    /// build, so after that, show Snapline's reminder with a button to the right settings page.
+    private func askForScreenRecording() {
+        let defaults = UserDefaults.standard
+        if defaults.string(forKey: Key.screenPermissionAskedForBuild) != Self.buildID {
+            defaults.set(Self.buildID, forKey: Key.screenPermissionAskedForBuild)
+            CGRequestScreenCaptureAccess()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Snapline needs Screen Recording permission."
+        alert.informativeText = "Turn on Snapline in System Settings → Privacy & Security → Screen & System Audio Recording, then try again."
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate()
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+        }
+    }
+
+    /// Changes with every build (ad-hoc signed builds count as a new app for macOS permissions).
+    private static let buildID: String = {
+        let exe = Bundle.main.executableURL?.path ?? ""
+        let date = (try? FileManager.default.attributesOfItem(atPath: exe)[.modificationDate] as? Date) ?? .distantPast
+        return "\(Int(date.timeIntervalSince1970))"
+    }()
 
     @objc private func showPreferences() { PreferencesWindow.show() }
 

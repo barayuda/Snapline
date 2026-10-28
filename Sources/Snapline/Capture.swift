@@ -12,10 +12,7 @@ enum Capture {
     /// Freezes every display at full pixel resolution.
     @MainActor
     static func captureAllScreens() async throws -> [ScreenShot] {
-        guard CGPreflightScreenCaptureAccess() else {
-            CGRequestScreenCaptureAccess()
-            throw PermissionError()
-        }
+        guard CGPreflightScreenCaptureAccess() else { throw PermissionError() }
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         var shots: [ScreenShot] = []
         for screen in NSScreen.screens {
