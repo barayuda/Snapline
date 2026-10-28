@@ -1,2 +1,4 @@
 [build]
   publish = "site"
+  # Deploy only when the website changes, not on app-only pushes. (Exit 0 = nothing changed = skip.)
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- site/ netlify.toml"
