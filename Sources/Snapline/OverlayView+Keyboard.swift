@@ -5,6 +5,12 @@ import SnaplineCore
 extension OverlayView {
     // MARK: - Keyboard
 
+    // The hidden Edit menu sends ⌘C, ⌘A and ⌘Z as standard actions before keyDown sees them;
+    // in the capture they mean Copy image, Select whole screen and Undo.
+    @objc func copy(_ sender: Any?) { session.perform(.copy) }
+    override func selectAll(_ sender: Any?) { selectWholeScreen() }
+    @objc func undo(_ sender: Any?) { undo() }
+
     override func keyDown(with e: NSEvent) {
         let chars = e.charactersIgnoringModifiers?.lowercased() ?? ""
         let flags = e.modifierFlags

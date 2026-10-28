@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.shared = self
         Settings.registerDefaults()
+        installEditMenu()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = Brand.menuBarImage
@@ -30,6 +31,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.informativeText = "Choose another one in Snapline Preferences."
             alert.runModal()
         }
+    }
+
+    /// A menu-bar-only app shows no menu bar, but text fields still get ⌘X/⌘C/⌘V/⌘A/⌘Z from the main menu's
+    /// key equivalents. Without this hidden Edit menu, paste does nothing in Preferences or the text tools.
+    private func installEditMenu() {
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let main = NSMenu()
+        main.addItem(NSMenuItem())   // the application menu slot
+        let editItem = NSMenuItem()
+        editItem.submenu = edit
+        main.addItem(editItem)
+        NSApp.mainMenu = main
     }
 
     func refreshMenu() {

@@ -235,6 +235,8 @@ private struct UploadTab: View {
     @State private var signedIn = false
     @State private var busy = false
     @State private var message: String?
+    /// Result of the last Save, shown next to the Save button.
+    @State private var saveStatus: (text: String, ok: Bool)?
 
     var body: some View {
         Form {
@@ -252,11 +254,13 @@ private struct UploadTab: View {
                     TextField("Key prefix", text: $prefix)
                     TextField("Public URL", text: $publicURL, prompt: Text("https://shots.example.com"))
                 }
-                Section("Keys (stored in the Keychain)") {
+                Section {
                     TextField("Access key ID", text: $accessKey)
-                        .onChange(of: accessKey) { _, v in save(.s3AccessKey, v) }
                     SecureField("Secret access key", text: $secretKey)
-                        .onChange(of: secretKey) { _, v in save(.s3SecretKey, v) }
+                } header: {
+                    Text("Keys (stored in the Keychain)")
+                } footer: {
+                    saveRow(action: saveS3)
                 }
                 Text("Uploads are public to anyone with the link. Do not upload guest or customer data.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -264,11 +268,11 @@ private struct UploadTab: View {
                 Section {
                     TextField("Client ID", text: $clientID, prompt: Text("Paste: …apps.googleusercontent.com"))
                     SecureField("Client secret", text: $clientSecret, prompt: Text("Paste: GOCSPX-…"))
-                        .onChange(of: clientSecret) { _, v in save(.googleClientSecret, v) }
                 } header: {
                     Text("Google Cloud OAuth client (type: Desktop app)")
                 } footer: {
                     VStack(alignment: .leading, spacing: 4) {
+                        saveRow { saveGoogle() }
                         Text("One-time setup in Google Cloud, about 10 minutes. The secret is stored in your Keychain.")
                         HStack(spacing: 14) {
                             Link("Open Google Cloud Console", destination: URL(string: "https://console.cloud.google.com/auth/clients")!)
@@ -283,9 +287,11 @@ private struct UploadTab: View {
                         LabeledContent("Signed in as", value: googleEmail.isEmpty ? "Google account" : googleEmail)
                         Button("Sign out") { Task { busy = true; await GoogleAuth.shared.signOut(); refresh(); busy = false } }
                     } else {
-                        Button("Sign in with Google…") { signIn() }.disabled(busy || !hasClient)
+                        // Saves first, so a just-pasted secret is never lost.
+                        Button("Sign in with Google…") { saveGoogle { if hasClient { signIn() } } }
+                            .disabled(busy || clientID.trimmingCharacters(in: .whitespaces).isEmpty)
                         if !hasClient {
-                            Text("Fill in the Client ID and Client secret above to turn on sign-in.")
+                            Text("Paste the Client ID and Client secret above, then click Save.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
@@ -297,6 +303,8 @@ private struct UploadTab: View {
             if let message { Text(message).font(.caption).foregroundStyle(.red) }
         }
         .formStyle(.grouped)
+        .onSubmit { target == "s3" ? saveS3() : saveGoogle() }   // Return in a field saves too
+        .onChange(of: target) { saveStatus = nil }
         .onAppear(perform: load)
     }
 
@@ -321,15 +329,57 @@ private struct UploadTab: View {
     }
 
     private func load() {
+        saveStatus = nil
         accessKey = Keychain.get(.s3AccessKey) ?? ""
         secretKey = Keychain.get(.s3SecretKey) ?? ""
         clientSecret = Keychain.get(.googleClientSecret) ?? ""
         refresh()
     }
 
-    private func save(_ secret: Secret, _ value: String) {
-        message = Keychain.set(secret, value.trimmingCharacters(in: .whitespaces)) ? nil : "Could not save to the Keychain."
+    // MARK: Saving
+
+    /// Save button with the result of the last save next to it.
+    private func saveRow(action: @escaping () -> Void) -> some View {
+        HStack {
+            if let saveStatus {
+                Label(saveStatus.text, systemImage: saveStatus.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(saveStatus.ok ? .green : .orange)
+            }
+            Spacer()
+            Button("Save", action: action)
+        }
+        .font(.callout)
     }
+
+    /// A text field only hands its text over when editing ends, so end it first (a password field still
+    /// being edited would otherwise save as empty), then run `work` once the value has arrived.
+    private func commitEditing(then work: @escaping @MainActor () -> Void) {
+        NSApp.keyWindow?.makeFirstResponder(nil)
+        DispatchQueue.main.async(execute: work)
+    }
+
+    private func saveS3() {
+        commitEditing {
+            let ok = Keychain.set(.s3AccessKey, trimmed(accessKey)) && Keychain.set(.s3SecretKey, trimmed(secretKey))
+            saveStatus = report(ok: ok, missing: [("access key ID", accessKey), ("secret access key", secretKey)])
+        }
+    }
+
+    private func saveGoogle(then next: (@MainActor () -> Void)? = nil) {
+        commitEditing {
+            let ok = Keychain.set(.googleClientSecret, trimmed(clientSecret))
+            saveStatus = report(ok: ok, missing: [("Client ID", clientID), ("Client secret", clientSecret)])
+            next?()
+        }
+    }
+
+    private func report(ok: Bool, missing fields: [(String, String)]) -> (text: String, ok: Bool) {
+        guard ok else { return ("Could not save to the Keychain.", false) }
+        let empty = fields.filter { trimmed($0.1).isEmpty }.map(\.0)
+        return empty.isEmpty ? ("Saved", true) : ("Saved. Still empty: \(empty.joined(separator: ", ")).", false)
+    }
+
+    private func trimmed(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines) }
 }
 
 // MARK: - Auto-hide
