@@ -1,7 +1,7 @@
 //! Twin of `macOS/Sources/SnaplineCore/SigV4Signer.swift`: AWS Signature Version 4 for one request,
 //! enough for an S3-compatible `PUT`.
 
-use crate::percent_encoding::unreserved;
+use crate::percent_encoding::{query_items, unreserved};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
@@ -147,22 +147,11 @@ impl SigV4Signer {
     }
 }
 
-/// Query items decoded (a `+` stays a `+`, as in `URLComponents`), encoded again, sorted by name then value.
+/// Query items encoded again with the unreserved set, sorted by name then value.
 fn canonical_query(url: &url::Url) -> String {
-    let decode = |s: &str| {
-        percent_encoding::percent_decode_str(s)
-            .decode_utf8_lossy()
-            .into_owned()
-    };
-    let mut items: Vec<(String, String)> = url
-        .query()
-        .unwrap_or_default()
-        .split('&')
-        .filter(|item| !item.is_empty())
-        .map(|item| {
-            let (name, value) = item.split_once('=').unwrap_or((item, ""));
-            (unreserved(&decode(name)), unreserved(&decode(value)))
-        })
+    let mut items: Vec<(String, String)> = query_items(url.query().unwrap_or_default())
+        .iter()
+        .map(|(name, value)| (unreserved(name), unreserved(value)))
         .collect();
     items.sort();
     items

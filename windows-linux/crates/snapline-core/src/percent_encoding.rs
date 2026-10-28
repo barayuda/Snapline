@@ -20,6 +20,25 @@ const NOT_UNRESERVED: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHA
 /// Plain http is accepted only for these: the keys never leave the computer (e.g. a local MinIO or floci).
 const LOOPBACK_HOSTS: [&str; 4] = ["localhost", "127.0.0.1", "::1", "[::1]"];
 
+/// Decoded `name=value` pairs of a URL query, in order. A `+` stays a `+` (as in `URLComponents`, unlike
+/// form decoding); a name without `=` gets an empty value.
+#[must_use]
+pub fn query_items(query: &str) -> Vec<(String, String)> {
+    let decode = |s: &str| {
+        percent_encoding::percent_decode_str(s)
+            .decode_utf8_lossy()
+            .into_owned()
+    };
+    query
+        .split('&')
+        .filter(|item| !item.is_empty())
+        .map(|item| {
+            let (name, value) = item.split_once('=').unwrap_or((item, ""));
+            (decode(name), decode(value))
+        })
+        .collect()
+}
+
 /// The upload URL and the public link it will have.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct S3Urls {
