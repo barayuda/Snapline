@@ -226,17 +226,33 @@ private struct UploadTab: View {
                 Text("Uploads are public to anyone with the link. Do not upload guest or customer data.")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
-                Section("Google Cloud OAuth client (type: Desktop app)") {
-                    TextField("Client ID", text: $clientID)
-                    SecureField("Client secret (stored in the Keychain)", text: $clientSecret)
+                Section {
+                    TextField("Client ID", text: $clientID, prompt: Text("Paste: …apps.googleusercontent.com"))
+                    SecureField("Client secret", text: $clientSecret, prompt: Text("Paste: GOCSPX-…"))
                         .onChange(of: clientSecret) { _, v in Keychain.set(.googleClientSecret, v.trimmingCharacters(in: .whitespaces)) }
+                } header: {
+                    Text("Google Cloud OAuth client (type: Desktop app)")
+                } footer: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("One-time setup in Google Cloud, about 10 minutes. The secret is stored in your Keychain.")
+                        HStack(spacing: 14) {
+                            Link("Open Google Cloud Console", destination: URL(string: "https://console.cloud.google.com/auth/clients")!)
+                            Link("Step-by-step guide", destination: URL(string: "https://github.com/barayuda/Snapline#google-drive-one-time-setup-about-10-minutes")!)
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 Section("Account") {
                     if signedIn {
                         LabeledContent("Signed in as", value: googleEmail.isEmpty ? "Google account" : googleEmail)
                         Button("Sign out") { Task { busy = true; await GoogleAuth.shared.signOut(); refresh(); busy = false } }
                     } else {
-                        Button("Sign in with Google…") { signIn() }.disabled(busy || clientID.isEmpty || clientSecret.isEmpty)
+                        Button("Sign in with Google…") { signIn() }.disabled(busy || !hasClient)
+                        if !hasClient {
+                            Text("Fill in the Client ID and Client secret above to turn on sign-in.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                     if busy { ProgressView().controlSize(.small) }
                 }
@@ -246,6 +262,10 @@ private struct UploadTab: View {
             if let message { Text(message).font(.caption).foregroundStyle(.red) }
         }
         .formStyle(.grouped)
+    }
+
+    private var hasClient: Bool {
+        !clientID.trimmingCharacters(in: .whitespaces).isEmpty && !clientSecret.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private func signIn() {
