@@ -34,7 +34,31 @@ scripts/make-app.sh --install  # same, then copies it to ~/Applications
 open build/Snapline.app
 ```
 
-On the first capture macOS asks for **Screen Recording** permission (System Settings → Privacy & Security → Screen & System Audio Recording). The app is signed ad hoc, so after **each rebuild** macOS may treat it as a new app: switch Snapline off and on again in that list. For the same reason, Keychain may ask once per rebuild to let Snapline read its saved keys; choose "Always Allow".
+On the first capture macOS asks for **Screen Recording** permission (System Settings → Privacy & Security → Screen &
+System Audio Recording). If the build is signed ad hoc (no certificate, the default), macOS treats **each rebuild as a
+new app**: it asks again, and Keychain may ask once to let Snapline read its saved keys ("Always Allow"). To avoid that,
+see below.
+
+### Keep permissions across rebuilds
+
+`scripts/make-app.sh` signs with a stable certificate when it finds one, in this order: the `SNAPLINE_SIGN_IDENTITY`
+environment variable, an **Apple Development** certificate, a **Snapline Local Signing** certificate, otherwise ad hoc.
+It prints which one it used. Create one of these once:
+
+**Option A: free Apple Development certificate (recommended, needs an Apple Account)**
+1. Open **Xcode → Settings → Accounts**, click **+**, and sign in with your Apple Account (a free account is enough).
+2. Select the account, click **Manage Certificates…**, then **+** → **Apple Development**.
+3. Run `scripts/make-app.sh --install`. It should print `Signed with: Apple Development: …`.
+
+**Option B: self-signed certificate (no Apple Account)**
+1. Open **Keychain Access** → menu **Keychain Access → Certificate Assistant → Create a Certificate…**
+2. Name: `Snapline Local Signing`, Identity Type: **Self Signed Root**, Certificate Type: **Code Signing** → Create.
+3. In the **login** keychain, double-click the new certificate → **Trust** → **Code Signing: Always Trust**, close
+   the window and confirm with your password.
+4. Run `scripts/make-app.sh --install`. It should print `Signed with: Snapline Local Signing`.
+
+After switching, macOS asks for Screen Recording **one last time** (the signature changed). Remove old "Snapline"
+entries from the list with **−**, allow the new one, and from then on rebuilds keep the permission.
 
 ## Use
 

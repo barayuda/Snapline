@@ -40,10 +40,24 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc signature. macOS ties the Screen Recording permission to it, so after
-# every rebuild you may have to switch Snapline off and on again in System Settings.
-codesign --force --sign - --identifier dev.barayuda.snapline "$APP"
-codesign --verify --strict "$APP"
+# Signing. macOS ties the Screen Recording permission (and Keychain access) to the signature.
+# With a stable certificate the permission survives rebuilds; ad hoc, every build is a "new app".
+# Order: $SNAPLINE_SIGN_IDENTITY, an "Apple Development" certificate, a "Snapline Local Signing"
+# certificate, else ad hoc. See README → "Keep permissions across rebuilds".
+identity_hash() {  # SHA-1 of the first code-signing identity whose name contains $1
+  security find-identity -p codesigning 2>/dev/null | awk -v n="$1" 'index($0, n) && $2 ~ /^[0-9A-F]{40}$/ { print $2; exit }'
+}
+SIGN_ID="${SNAPLINE_SIGN_IDENTITY:-}"
+[[ -z "$SIGN_ID" ]] && SIGN_ID="$(identity_hash "Apple Development")"
+[[ -z "$SIGN_ID" ]] && SIGN_ID="$(identity_hash "Snapline Local Signing")"
+if [[ -n "$SIGN_ID" ]]; then
+  codesign --force --sign "$SIGN_ID" --identifier dev.barayuda.snapline "$APP"
+  echo "Signed with: $(security find-identity -p codesigning | grep -m1 "$SIGN_ID" | sed -E 's/.*"(.*)".*/\1/')"
+else
+  codesign --force --sign - --identifier dev.barayuda.snapline "$APP"
+  echo "Signed ad hoc: macOS will ask for Screen Recording again after each rebuild."
+fi
+codesign --verify "$APP"
 lipo -info "$APP/Contents/MacOS/Snapline"
 
 # Tell Launch Services about the new bundle, so Finder, Dock and System Settings show the current icon.
