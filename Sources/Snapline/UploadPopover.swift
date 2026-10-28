@@ -40,7 +40,8 @@ final class UploadModel {
             do {
                 let result = try await Uploaders.current().upload(png, fileName: fileName) { value in
                     Task { @MainActor in
-                        guard case .uploading = self.phase else { return }
+                        // Redraw only when the whole percentage changes.
+                        guard case let .uploading(old) = self.phase, Int(value * 100) != Int(old * 100) else { return }
                         self.phase = .uploading(value)
                         StatusPopover.setIcon(.progress(value))
                     }
@@ -96,7 +97,7 @@ struct UploadView: View {
                     .font(.headline).foregroundStyle(.red)
                 Text(message).font(.callout).fixedSize(horizontal: false, vertical: true)
                 HStack {
-                    Button("Preferences…") { StatusPopover.close(); PreferencesWindow.show(tab: .upload) }
+                    Button("Preferences…") { StatusPopover.close(); Preferences.show(tab: .upload) }
                     Button("Try again") { model.run() }.keyboardShortcut(.defaultAction)
                 }
             }

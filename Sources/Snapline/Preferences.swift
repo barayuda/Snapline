@@ -14,22 +14,28 @@ final class PreferencesState {
     var tab = PreferencesTab.general
 }
 
+/// Preferences, shown in the menu bar popover.
 @MainActor
-enum PreferencesWindow {
-    private static var window: NSWindow?
+enum Preferences {
+    /// Built once and kept: laying the form out took 161 ms the first time and ~17 ms after that,
+    /// which made the popover stutter while it animated open.
+    private static var controller: NSHostingController<PreferencesView>?
+
+    private static var ready: NSHostingController<PreferencesView> {
+        if let controller { return controller }
+        let c = NSHostingController(rootView: PreferencesView())
+        c.preferredContentSize = c.view.fittingSize
+        controller = c
+        return c
+    }
+
+    /// Build and lay out Preferences ahead of time, so the first open is smooth too.
+    static func prepare() { _ = ready }
 
     static func show(tab: PreferencesTab? = nil) {
         if let tab { PreferencesState.shared.tab = tab }
-        if window == nil {
-            let w = NSWindow(contentViewController: NSHostingController(rootView: PreferencesView()))
-            w.title = "Snapline Preferences"
-            w.styleMask = [.titled, .closable]
-            w.isReleasedWhenClosed = false
-            window = w
-            w.center()
-        }
-        NSApp.activate()
-        window?.makeKeyAndOrderFront(nil)
+        guard !StatusPopover.isShowingPreferences else { return }
+        StatusPopover.show(ready, kind: .preferences)
     }
 }
 
@@ -50,6 +56,7 @@ struct PreferencesView: View {
         .tint(Color(nsColor: Brand.violet))
         .frame(width: 560)
         .padding()
+        .onExitCommand { StatusPopover.close() }  // Esc
     }
 }
 
@@ -68,7 +75,15 @@ private struct BrandHeader: View {
                                                     startPoint: .leading, endPoint: .trailing))
             }
             Spacer()
-            Text("v\(Brand.version)").font(.caption.monospaced()).foregroundStyle(.tertiary)
+            VStack(alignment: .trailing, spacing: 6) {
+                Button { StatusPopover.close() } label: {
+                    Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Close (Esc)")
+                .accessibilityLabel("Close Preferences")
+                Text("v\(Brand.version)").font(.caption.monospaced()).foregroundStyle(.tertiary)
+            }
         }
         .padding(.horizontal, 6)
     }
@@ -289,7 +304,7 @@ private struct UploadTab: View {
             do { try await GoogleAuth.shared.signIn() } catch { message = error.localizedDescription }
             refresh()
             busy = false
-            PreferencesWindow.show()
+            Preferences.show()
         }
     }
 

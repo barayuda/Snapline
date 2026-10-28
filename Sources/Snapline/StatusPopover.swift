@@ -1,11 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// Everything Snapline shows after a capture drops down from its menu bar icon: upload status, the Copy Text
+/// Everything Snapline shows drops down from its menu bar icon: Preferences, upload status, the Copy Text
 /// review and short messages. One popover at a time; the icon itself shows upload progress and results.
 @MainActor
 enum StatusPopover {
-    enum Kind { case message, upload, review }
+    enum Kind { case message, upload, review, preferences }
 
     static weak var button: NSStatusBarButton?
     private static var popover: NSPopover?
@@ -13,15 +13,22 @@ enum StatusPopover {
     private static var autoClose: Task<Void, Never>?
     private static var iconReset: Task<Void, Never>?
 
-    /// Shows `content` under the icon. `review` stays until closed in code; the others close on an outside click.
+    /// Review and Preferences stay until closed in code (✕, Esc, Copy/Cancel, or a click on the icon), so they
+    /// survive switching to a browser; Preferences can also be dragged off into its own window.
+    private static let delegate = PopoverDelegate()
+
+    /// Shows `content` under the icon. Messages and upload status close on an outside click.
     static func show(_ content: NSViewController, kind: Kind, closeAfter seconds: Double? = nil, keepOpen: (() -> Bool)? = nil) {
         guard let button else { return }
-        close()
+        close(animated: false)  // never run a closing and an opening animation at the same time
         let p = NSPopover()
         p.contentViewController = content
-        p.behavior = kind == .review ? .applicationDefined : .transient
+        p.contentSize = content.preferredContentSize == .zero ? content.view.fittingSize : content.preferredContentSize
+        let stays = kind == .review || kind == .preferences
+        p.behavior = stays ? .applicationDefined : .transient
         p.animates = true
-        if kind == .review { NSApp.activate() }
+        p.delegate = delegate
+        if stays { NSApp.activate() }
         p.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover = p
         Self.kind = kind
@@ -40,19 +47,23 @@ enum StatusPopover {
         }
     }
 
-    static func close() {
+    static func close(animated: Bool = true) {
         autoClose?.cancel()
+        if !animated { popover?.animates = false }
         popover?.performClose(nil)
         popover = nil
         kind = nil
     }
 
     static var isShowingReview: Bool { kind == .review && popover?.isShown == true }
+    static var isShowingPreferences: Bool { kind == .preferences && popover?.isShown == true }
+    /// A popover the user is working in (review or Preferences); a click on the icon closes it instead of capturing.
+    static var isShowingPanel: Bool { isShowingReview || isShowingPreferences }
     static var isShowingUpload: Bool { kind == .upload && popover?.isShown == true }
 
-    /// A short message (e.g. "Saved to Desktop") that closes by itself. Never covers the Copy Text review.
+    /// A short message (e.g. "Saved to Desktop") that closes by itself. Never covers the review or Preferences.
     static func message(_ title: String, _ detail: String, symbol: String = "checkmark.circle.fill", tint: Color = .green) {
-        guard !isShowingReview else { return }
+        guard !isShowingPanel else { return }
         let view = HStack(alignment: .top, spacing: 10) {
             Image(systemName: symbol).font(.title2).foregroundStyle(tint)
             VStack(alignment: .leading, spacing: 2) {
@@ -81,4 +92,10 @@ enum StatusPopover {
             button?.contentTintColor = nil
         }
     }
+}
+
+/// Lets Preferences be dragged off the menu bar into its own floating window.
+@MainActor
+private final class PopoverDelegate: NSObject, NSPopoverDelegate {
+    func popoverShouldDetach(_ popover: NSPopover) -> Bool { StatusPopover.isShowingPreferences }
 }

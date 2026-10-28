@@ -15,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = Brand.menuBarImage
         StatusPopover.button = statusItem.button
+        // Prepare Preferences while nothing else is happening, so opening it never stutters.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { Preferences.prepare() }
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -49,6 +51,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusItem.menu = menu
             statusItem.button?.performClick(nil)
             statusItem.menu = nil
+        } else if StatusPopover.isShowingPanel {
+            StatusPopover.close()   // clicking the icon closes Preferences or the review instead of capturing
         } else {
             startCapture()
         }
@@ -101,7 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return "\(Int(date.timeIntervalSince1970))"
     }()
 
-    @objc private func showPreferences() { PreferencesWindow.show() }
+    @objc private func showPreferences() { Preferences.show() }
 
     @objc private func showAbout() {
         NSApp.activate()

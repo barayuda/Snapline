@@ -87,7 +87,7 @@ entries from the list with **−**, allow the new one, and from then on rebuilds
 | Search similar images | Magnifier button → Google Lens or TinEye (uploads first) |
 | Cancel | Esc |
 
-Confirmations such as "Screenshot saved" or "Text copied" appear briefly in a small popover under the menu bar icon. Preferences is a normal window, so it stays open while you copy keys from a browser.
+Confirmations such as "Screenshot saved" or "Text copied" appear briefly in a small popover under the menu bar icon. Preferences opens in the same popover (menu → Preferences…, or ⌘,). It stays open while you switch to a browser to copy keys; close it with ✕, Esc or a click on the menu bar icon, or drag it away from the menu bar to keep it as a floating window.
 
 ### Auto-hide sensitive data
 
