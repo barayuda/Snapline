@@ -49,7 +49,7 @@ On the first capture macOS asks for **Screen Recording** permission (System Sett
 | Text | Text tool, click, type, Return. Scroll while typing to change size. Drag a finished text with the text tool to move it |
 | Undo | ⌘Z |
 | Copy image | ⌘C or Return |
-| Copy text | ⇧⌘C or the text button: reads the text in the selection on your Mac and copies it as plain text. Hidden areas are not read |
+| Copy text | ⇧⌘C or the text button: reads the text in the selection on your Mac and copies it as plain text, in reading order, with wrapped lines joined back into sentences. Keyboard symbols (⌘ ⇧ ⌥ ⌃ ↩ ⎋ ↑ ↓ ✓…), which Apple's text recognition cannot read, are restored by comparing their shapes. Hidden areas are not read |
 | Save | ⌘S saves straight to the folder set in Preferences → General (Desktop by default) as `Screenshot at MMM dd HH-mm-ss.png`; never overwrites. ⌥⌘S (or ⌥-click Save) opens a Save As dialog |
 | Upload | ⌘D. The link is copied to the clipboard |
 | Edit in another app | ⌘E (Preview by default; choose another app in Preferences) |
