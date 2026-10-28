@@ -313,9 +313,11 @@ private struct UploadTab: View {
         !clientID.trimmingCharacters(in: .whitespaces).isEmpty && !clientSecret.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
+    /// Preferences steps aside while Google's page is open in the browser, then comes back with the result.
     private func signIn() {
         busy = true
         signInError = nil
+        StatusPopover.close()
         Task {
             do { try await GoogleAuth.shared.signIn() } catch { signInError = error.localizedDescription }
             refresh()
