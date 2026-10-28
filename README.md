@@ -102,3 +102,17 @@ Assets/                 AppIcon.icon (layered app icon), icon-1024.png, banner.p
 ```
 
 Brand colours, type and icon rules: [BRAND.md](BRAND.md).
+
+## Credits
+
+Snapline is inspired by **[Lightshot Screenshot](https://app.prntscr.com/)** by Skillbrains: thank you for the
+"select, mark up, share" workflow that so many people rely on. Snapline is an independent project written from scratch
+for Apple Silicon. It is not affiliated with or endorsed by Skillbrains, and "Lightshot" is their trademark.
+
+## License
+
+Free for personal and other noncommercial use under the [PolyForm Noncommercial License 1.0.0](LICENSE.md): you may use,
+study and change Snapline, but not sell it or use it commercially. Copies must keep both "Required Notice" lines (copyright and the Snapline brand).
+
+The Snapline name, icon and logo are not covered by the license; see [TRADEMARKS.md](TRADEMARKS.md).
+The fonts in `scripts/brand/fonts/` keep their own SIL Open Font License (license files next to them).
