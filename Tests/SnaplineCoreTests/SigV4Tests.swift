@@ -83,13 +83,51 @@ struct S3LocationTests {
         #expect(urls.public.absoluteString == "https://cdn.example.com/b/k.png")
     }
 
+    @Test(arguments: ["http://localhost:4566", "http://127.0.0.1:9000", "http://[::1]:9000"])
+    func allowsPlainHTTPOnlyOnThisMac(endpoint: String) throws {
+        // Loopback never leaves the Mac, so a local MinIO or floci may use http.
+        let urls = try #require(S3Location.urls(endpoint: endpoint, bucket: "b", key: "k.png", publicBaseURL: endpoint + "/b"))
+        #expect(urls.upload.absoluteString == endpoint + "/b/k.png")
+    }
+
     @Test(arguments: [
         ("http://insecure.example.com", "b", "https://cdn.example.com"),   // HTTPS only: keys are sent with it
+        ("http://192.168.1.5:9000", "b", "https://cdn.example.com"),       // other machines need HTTPS, even on the LAN
+        ("http://localhost.example.com", "b", "https://cdn.example.com"),   // not loopback
         ("https://ok.example.com", "", "https://cdn.example.com"),         // no bucket
         ("https://ok.example.com", "b", ""),                               // no public URL
         ("not a url", "b", "https://cdn.example.com"),
     ])
     func rejectsIncompleteSettings(endpoint: String, bucket: String, publicBase: String) {
         #expect(S3Location.urls(endpoint: endpoint, bucket: bucket, key: "k.png", publicBaseURL: publicBase) == nil)
+    }
+}
+
+/// The signed PUT the app sends for an upload (checked offline; see S3IntegrationTests for a live run).
+struct S3UploadRequestTests {
+    @Test func signedPutCarriesBodyHashTypeAndSignature() throws {
+        let png = Data([0x89, 0x50, 0x4E, 0x47])
+        let signer = SigV4Signer(accessKey: "AKIDEXAMPLE", secretKey: "secret", region: "auto")
+        let date = try #require(ISO8601DateFormatter().date(from: "2026-10-28T06:00:00Z"))
+        let upload = try #require(S3Location.uploadRequest(
+            png, key: "snapline/2026/10/a b.png", contentType: "image/png",
+            endpoint: "https://acc.r2.cloudflarestorage.com", bucket: "shots",
+            publicBaseURL: "https://shots.example.com", signer: signer, date: date))
+
+        #expect(upload.request.httpMethod == "PUT")
+        #expect(upload.request.url?.absoluteString == "https://acc.r2.cloudflarestorage.com/shots/snapline/2026/10/a%20b.png")
+        #expect(upload.publicURL.absoluteString == "https://shots.example.com/snapline/2026/10/a%20b.png")
+        #expect(upload.request.value(forHTTPHeaderField: "Content-Type") == "image/png")
+        #expect(upload.request.value(forHTTPHeaderField: "x-amz-content-sha256") == SigV4Signer.sha256Hex(png))
+        #expect(upload.request.value(forHTTPHeaderField: "x-amz-date") == "20261028T060000Z")
+        let auth = try #require(upload.request.value(forHTTPHeaderField: "Authorization"))
+        #expect(auth.hasPrefix("AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261028/auto/s3/aws4_request, "))
+        #expect(auth.contains("SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date, Signature="))
+    }
+
+    @Test func noRequestForIncompleteSettings() {
+        let signer = SigV4Signer(accessKey: "a", secretKey: "b", region: "auto")
+        #expect(S3Location.uploadRequest(Data(), key: "k.png", contentType: "image/png", endpoint: "http://insecure.example.com",
+                                         bucket: "b", publicBaseURL: "https://cdn.example.com", signer: signer, date: Date()) == nil)
     }
 }

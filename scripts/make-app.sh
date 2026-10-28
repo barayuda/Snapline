@@ -36,6 +36,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSHumanReadableCopyright</key><string>Barayuda</string>
+  <key>NSLocalNetworkUsageDescription</key><string>Snapline uploads to the storage server you set in Preferences when it is on your local network (for example a NAS or a MinIO server).</string>
 </dict>
 </plist>
 PLIST

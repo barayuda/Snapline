@@ -129,6 +129,16 @@ Pick the target in Preferences → Upload. Anything uploaded is public to whoeve
 
 The bucket (or the prefix) must allow public reads, otherwise the link will not open.
 
+The endpoint must use HTTPS, because your keys are sent with every upload. The one exception is a server on this Mac
+(`http://localhost:…`, `127.0.0.1`, `::1`), such as a local MinIO or floci for testing. A server elsewhere on your local
+network (a NAS, an `*.orb.local` container name) needs HTTPS, and macOS asks once for **Local Network** permission.
+
+To test uploads against a local S3-compatible server (it creates and deletes its own bucket):
+
+```bash
+SNAPLINE_S3_TEST_ENDPOINT=http://localhost:4566 swift test --filter S3IntegrationTests
+```
+
 ### Google Drive (one-time setup, about 10 minutes)
 
 Snapline signs in with your own Google Cloud OAuth client, so you create one first:

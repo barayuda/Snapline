@@ -89,19 +89,13 @@ struct S3Uploader: Uploader {
 
     func upload(_ png: Data, fileName: String, progress: @escaping @Sendable (Double) -> Void) async throws -> UploadResult {
         let key = Naming.objectKey(prefix: prefix, date: Date())
-        guard let urls = S3Location.urls(endpoint: endpoint, bucket: bucket, key: key, publicBaseURL: publicBaseURL) else {
+        guard let upload = S3Location.uploadRequest(png, key: key, contentType: "image/png", endpoint: endpoint, bucket: bucket,
+                                                    publicBaseURL: publicBaseURL, signer: signer, date: Date()) else {
             throw UploadError(message: "Invalid S3 endpoint or public URL.")
         }
-        var request = URLRequest(url: urls.upload)
-        request.httpMethod = "PUT"
-        let hash = SigV4Signer.sha256Hex(png)
-        request.setValue("image/png", forHTTPHeaderField: "Content-Type")
-        request.setValue(hash, forHTTPHeaderField: "x-amz-content-sha256")
-        request = signer.sign(request, payloadHash: hash, date: Date())
-
-        let (data, http) = try await send(request, body: png, progress: progress)
+        let (data, http) = try await send(upload.request, body: png, progress: progress)
         try checkStatus(http, body: data, action: "S3 upload")
-        return UploadResult(pageURL: urls.public, directURL: urls.public)
+        return UploadResult(pageURL: upload.publicURL, directURL: upload.publicURL)
     }
 }
 
