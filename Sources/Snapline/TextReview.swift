@@ -1,42 +1,35 @@
 import AppKit
 import SnaplineCore
 
-/// Shown by Copy Text only when some spots could not be read for sure: the text with those spots
-/// highlighted, a palette of symbols, and Copy / Cancel. Nothing reaches the clipboard until Copy.
+/// Shown by Copy Text, in the menu bar popover, only when some spots could not be read for sure: the text with
+/// those spots highlighted, a palette of symbols, and Copy / Cancel. Nothing reaches the clipboard until Copy.
 @MainActor
-final class TextReviewPanel: NSObject, NSWindowDelegate {
-    private static var current: TextReviewPanel?
-
-    private let panel: NSPanel
-    private let textView: NSTextView
+final class TextReviewController: NSViewController {
+    private let marked: String
+    private let textView = NSTextView()
 
     /// `marked`: text from TextExtraction with UncertainMarks around the spots to check.
     static func show(_ marked: String) {
-        current?.panel.close()
-        let p = TextReviewPanel(marked)
-        current = p
-        NSApp.activate()
-        p.panel.center()
-        p.panel.makeKeyAndOrderFront(nil)
-        p.panel.makeFirstResponder(p.textView)
+        let controller = TextReviewController(marked)
+        StatusPopover.show(controller, kind: .review)
+        controller.view.window?.makeFirstResponder(controller.textView)
     }
 
     private init(_ marked: String) {
+        self.marked = marked
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    override func loadView() {
         let (text, ranges) = UncertainMarks.extract(marked)
-        panel = NSPanel(contentRect: CGRect(x: 0, y: 0, width: 640, height: 400),
-                        styleMask: [.titled, .closable, .resizable, .utilityWindow], backing: .buffered, defer: false)
-        textView = NSTextView()
-        super.init()
 
-        panel.title = "Check the copied text"
-        panel.isFloatingPanel = true
-        panel.isReleasedWhenClosed = false
-        panel.delegate = self
-        panel.minSize = CGSize(width: 520, height: 300)
-
+        let title = NSTextField(labelWithString: "Check the copied text")
+        title.font = .boldSystemFont(ofSize: 14)
         let note = NSTextField(wrappingLabelWithString:
             "Some symbols could not be read for sure; they are highlighted. Select a character and click a symbol to "
-            + "replace it, or type over it. A \u{FFFD} marks a symbol that was skipped. Then click Copy.")
+            + "replace it, or type over it. A \u{FFFD} marks a symbol that was skipped.")
         note.textColor = .secondaryLabelColor
 
         textView.isRichText = false
@@ -79,16 +72,17 @@ final class TextReviewPanel: NSObject, NSWindowDelegate {
         copy.toolTip = "Copy (⌘↩)"
         let buttons = NSStackView(views: [NSView(), cancel, copy])
 
-        let stack = NSStackView(views: [note, scroll] + rows + [buttons])
+        let stack = NSStackView(views: [title, note, scroll] + rows + [buttons])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
         stack.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 14, right: 14)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        let content = NSView()
+        let content = NSView(frame: CGRect(x: 0, y: 0, width: 560, height: 380))
         content.addSubview(stack)
-        panel.contentView = content
         NSLayoutConstraint.activate([
+            content.widthAnchor.constraint(equalToConstant: 560),
+            content.heightAnchor.constraint(equalToConstant: 380),
             stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             stack.topAnchor.constraint(equalTo: content.topAnchor),
@@ -96,23 +90,20 @@ final class TextReviewPanel: NSObject, NSWindowDelegate {
             scroll.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -28),
             note.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -28),
             buttons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -28),
-            scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 150),
+            scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 120),
         ])
+        view = content
     }
 
     @objc private func insertSymbol(_ sender: NSButton) {
         textView.insertText(sender.title, replacementRange: textView.selectedRange())
-        panel.makeFirstResponder(textView)
+        view.window?.makeFirstResponder(textView)
     }
 
     @objc private func copyClicked() {
+        StatusPopover.close()
         Actions.finishCopyText(textView.string)
-        panel.close()
     }
 
-    @objc private func cancelClicked() { panel.close() }
-
-    func windowWillClose(_ notification: Notification) {
-        if Self.current === self { Self.current = nil }
-    }
+    @objc private func cancelClicked() { StatusPopover.close() }
 }

@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = Brand.menuBarImage
+        StatusPopover.button = statusItem.button
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -55,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func startCapture() {
         guard session == nil else { return }
+        StatusPopover.close()
         Task {
             do {
                 let shots = try await Capture.captureAllScreens()

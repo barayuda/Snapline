@@ -79,13 +79,15 @@ entries from the list with **−**, allow the new one, and from then on rebuilds
 | Text | Text tool, click, type, Return. Scroll while typing to change size. Drag a finished text with the text tool to move it |
 | Undo | ⌘Z |
 | Copy image | ⌘C or Return |
-| Copy text | ⇧⌘C or the text button: reads the text in the selection on your Mac and copies it as plain text, in reading order, with wrapped lines joined back into sentences. Keyboard symbols (⌘ ⇧ ⌥ ⌃ ↩ ⏎ ⎋ ⇥ ⇤ ⌫ ⌦ ⇪ ⇞ ⇟ ↖ ↘ ⏏ ↑ ↓ ← → ✓ ≠ ±), which Apple's text recognition cannot read, are restored by comparing their shapes, and symbols it skipped are put back. If something could not be read for sure, a review panel shows it highlighted, with a symbol palette, before anything is copied. Hidden areas are not read |
+| Copy text | ⇧⌘C or the text button: reads the text in the selection on your Mac and copies it as plain text, in reading order, with wrapped lines joined back into sentences. Keyboard symbols (⌘ ⇧ ⌥ ⌃ ↩ ⏎ ⎋ ⇥ ⇤ ⌫ ⌦ ⇪ ⇞ ⇟ ↖ ↘ ⏏ ↑ ↓ ← → ✓ ≠ ±), which Apple's text recognition cannot read, are restored by comparing their shapes, and symbols it skipped are put back. If something could not be read for sure, a review popover under the menu bar icon shows it highlighted, with a symbol palette, before anything is copied. Hidden areas are not read |
 | Save | ⌘S saves straight to the folder set in Preferences → General (Desktop by default) as `Screenshot at MMM dd HH-mm-ss.png`; never overwrites. ⌥⌘S (or ⌥-click Save) opens a Save As dialog |
-| Upload | ⌘D. The link is copied to the clipboard |
+| Upload | ⌘D. The menu bar icon shows a progress ring, then ✓ (or a red !). A popover under the icon shows the link, already copied, with Copy / Open / Email; on failure it explains why, with Preferences and Try again |
 | Edit in another app | ⌘E (Preview by default; choose another app in Preferences) |
 | Print | ⌘P |
 | Search similar images | Magnifier button → Google Lens or TinEye (uploads first) |
 | Cancel | Esc |
+
+Confirmations such as "Screenshot saved" or "Text copied" appear briefly in a small popover under the menu bar icon. Preferences is a normal window, so it stays open while you copy keys from a browser.
 
 ### Auto-hide sensitive data
 

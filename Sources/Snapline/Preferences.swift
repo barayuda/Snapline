@@ -1,34 +1,48 @@
 import AppKit
+import Observation
 import ServiceManagement
 import SnaplineCore
 import SwiftUI
+
+enum PreferencesTab: Hashable { case general, upload, autoHide }
+
+/// Which tab Preferences shows; set before opening to jump to a tab.
+@MainActor
+@Observable
+final class PreferencesState {
+    static let shared = PreferencesState()
+    var tab = PreferencesTab.general
+}
 
 @MainActor
 enum PreferencesWindow {
     private static var window: NSWindow?
 
-    static func show() {
+    static func show(tab: PreferencesTab? = nil) {
+        if let tab { PreferencesState.shared.tab = tab }
         if window == nil {
             let w = NSWindow(contentViewController: NSHostingController(rootView: PreferencesView()))
             w.title = "Snapline Preferences"
             w.styleMask = [.titled, .closable]
             w.isReleasedWhenClosed = false
             window = w
+            w.center()
         }
         NSApp.activate()
-        window?.center()
         window?.makeKeyAndOrderFront(nil)
     }
 }
 
 struct PreferencesView: View {
+    @Bindable private var state = PreferencesState.shared
+
     var body: some View {
         VStack(spacing: 14) {
             BrandHeader()
-            TabView {
-                GeneralTab().tabItem { Label("General", systemImage: "gearshape") }
-                UploadTab().tabItem { Label("Upload", systemImage: "icloud.and.arrow.up") }
-                AutoHideTab().tabItem { Label("Auto-hide", systemImage: "eye.slash") }
+            TabView(selection: $state.tab) {
+                GeneralTab().tabItem { Label("General", systemImage: "gearshape") }.tag(PreferencesTab.general)
+                UploadTab().tabItem { Label("Upload", systemImage: "icloud.and.arrow.up") }.tag(PreferencesTab.upload)
+                AutoHideTab().tabItem { Label("Auto-hide", systemImage: "eye.slash") }.tag(PreferencesTab.autoHide)
             }
             // A grouped Form has no natural height inside a TabView; without this the tabs collapse to nothing.
             .frame(height: 470)

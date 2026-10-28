@@ -21,37 +21,93 @@ enum Brand {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
     }
 
-    /// The icon's corners and spark as an 18-pt template image, so macOS tints it for light and dark menu bars.
-    static let menuBarImage: NSImage = {
-        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
-            let box = rect.insetBy(dx: 2, dy: 2)
-            let arm: CGFloat = 4.5
-            let corners = NSBezierPath()
-            for (x, y, dx, dy) in [(box.minX, box.maxY, 1.0, -1.0), (box.maxX, box.maxY, -1.0, -1.0),
-                                   (box.maxX, box.minY, -1.0, 1.0), (box.minX, box.minY, 1.0, 1.0)] {
-                corners.move(to: NSPoint(x: x, y: y + dy * arm))
-                corners.line(to: NSPoint(x: x, y: y))
-                corners.line(to: NSPoint(x: x + dx * arm, y: y))
-            }
-            corners.lineWidth = 1.7
-            corners.lineCapStyle = .round
-            corners.lineJoinStyle = .round
-            NSColor.black.setStroke()
-            corners.stroke()
+    /// What the menu bar icon shows besides its normal look.
+    enum IconState: Equatable {
+        case normal
+        case progress(Double)   // 0...1, drawn as a ring around the spark
+        case success            // ✓ in place of the spark
+        case failure            // ! in place of the spark (tinted red by the caller)
+    }
 
-            let c = NSPoint(x: rect.midX, y: rect.midY), r: CGFloat = 4, k = r * 0.14
-            let spark = NSBezierPath()
-            spark.move(to: NSPoint(x: c.x, y: c.y + r))
-            spark.curve(to: NSPoint(x: c.x + r, y: c.y), controlPoint1: NSPoint(x: c.x + k, y: c.y + k), controlPoint2: NSPoint(x: c.x + k, y: c.y + k))
-            spark.curve(to: NSPoint(x: c.x, y: c.y - r), controlPoint1: NSPoint(x: c.x + k, y: c.y - k), controlPoint2: NSPoint(x: c.x + k, y: c.y - k))
-            spark.curve(to: NSPoint(x: c.x - r, y: c.y), controlPoint1: NSPoint(x: c.x - k, y: c.y - k), controlPoint2: NSPoint(x: c.x - k, y: c.y - k))
-            spark.curve(to: NSPoint(x: c.x, y: c.y + r), controlPoint1: NSPoint(x: c.x - k, y: c.y + k), controlPoint2: NSPoint(x: c.x - k, y: c.y + k))
+    static let menuBarImage = menuBarImage(.normal)
+
+    /// The icon as an 18-pt template image, so macOS tints it for light and dark menu bars.
+    static func menuBarImage(_ state: IconState) -> NSImage {
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+            NSColor.black.setStroke()
             NSColor.black.setFill()
-            spark.fill()
+            let c = NSPoint(x: rect.midX, y: rect.midY)
+
+            if case let .progress(value) = state {
+                // Faint full track plus the done part, clockwise from the top.
+                let track = NSBezierPath(ovalIn: rect.insetBy(dx: 1.6, dy: 1.6))
+                track.lineWidth = 1.6
+                NSColor.black.withAlphaComponent(0.3).setStroke()
+                track.stroke()
+                let arc = NSBezierPath()
+                arc.appendArc(withCenter: c, radius: rect.width / 2 - 1.6, startAngle: 90,
+                              endAngle: 90 - 360 * CGFloat(min(max(value, 0.02), 1)), clockwise: true)
+                arc.lineWidth = 1.8
+                arc.lineCapStyle = .round
+                NSColor.black.setStroke()
+                arc.stroke()
+                spark(at: c, radius: 3.6).fill()
+                return true
+            }
+
+            corners(in: rect.insetBy(dx: 2, dy: 2)).stroke()
+            switch state {
+            case .success:
+                let check = NSBezierPath()
+                check.move(to: NSPoint(x: c.x - 3, y: c.y))
+                check.line(to: NSPoint(x: c.x - 0.8, y: c.y - 2.3))
+                check.line(to: NSPoint(x: c.x + 3.2, y: c.y + 2.6))
+                check.lineWidth = 1.8
+                check.lineCapStyle = .round
+                check.lineJoinStyle = .round
+                check.stroke()
+            case .failure:
+                let bar = NSBezierPath(roundedRect: NSRect(x: c.x - 0.9, y: c.y - 0.6, width: 1.8, height: 4.6), xRadius: 0.9, yRadius: 0.9)
+                bar.fill()
+                NSBezierPath(ovalIn: NSRect(x: c.x - 1, y: c.y - 3.6, width: 2, height: 2)).fill()
+            default:
+                spark(at: c, radius: 4).fill()
+            }
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = "Snapline"
+        image.accessibilityDescription = switch state {
+        case .normal: "Snapline"
+        case let .progress(v): "Snapline, uploading \(Int(v * 100)) percent"
+        case .success: "Snapline, upload done"
+        case .failure: "Snapline, upload failed"
+        }
         return image
-    }()
+    }
+
+    private static func corners(in box: NSRect) -> NSBezierPath {
+        let arm: CGFloat = 4.5
+        let p = NSBezierPath()
+        for (x, y, dx, dy) in [(box.minX, box.maxY, 1.0, -1.0), (box.maxX, box.maxY, -1.0, -1.0),
+                               (box.maxX, box.minY, -1.0, 1.0), (box.minX, box.minY, 1.0, 1.0)] {
+            p.move(to: NSPoint(x: x, y: y + dy * arm))
+            p.line(to: NSPoint(x: x, y: y))
+            p.line(to: NSPoint(x: x + dx * arm, y: y))
+        }
+        p.lineWidth = 1.7
+        p.lineCapStyle = .round
+        p.lineJoinStyle = .round
+        return p
+    }
+
+    private static func spark(at c: NSPoint, radius r: CGFloat) -> NSBezierPath {
+        let k = r * 0.14
+        let p = NSBezierPath()
+        p.move(to: NSPoint(x: c.x, y: c.y + r))
+        p.curve(to: NSPoint(x: c.x + r, y: c.y), controlPoint1: NSPoint(x: c.x + k, y: c.y + k), controlPoint2: NSPoint(x: c.x + k, y: c.y + k))
+        p.curve(to: NSPoint(x: c.x, y: c.y - r), controlPoint1: NSPoint(x: c.x + k, y: c.y - k), controlPoint2: NSPoint(x: c.x + k, y: c.y - k))
+        p.curve(to: NSPoint(x: c.x - r, y: c.y), controlPoint1: NSPoint(x: c.x - k, y: c.y - k), controlPoint2: NSPoint(x: c.x - k, y: c.y - k))
+        p.curve(to: NSPoint(x: c.x, y: c.y + r), controlPoint1: NSPoint(x: c.x - k, y: c.y + k), controlPoint2: NSPoint(x: c.x - k, y: c.y + k))
+        return p
+    }
 }

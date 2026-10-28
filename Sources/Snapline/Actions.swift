@@ -1,7 +1,7 @@
 import AppKit
+import SwiftUI
 import SnaplineCore
 import UniformTypeIdentifiers
-import UserNotifications
 
 /// What happens to the flattened screenshot after the overlay closes.
 @MainActor
@@ -17,8 +17,8 @@ enum Actions {
         case .print: print(image)
         case .edit: edit(png, name: Naming.fileName(for: date))
         case .email: email(png, name: Naming.fileName(for: date), link: nil)
-        case .upload: UploadPanel.start(png: png, fileName: Naming.fileName(for: date), search: nil)
-        case let .search(engine): UploadPanel.start(png: png, fileName: Naming.fileName(for: date), search: engine)
+        case .upload: Uploads.start(png: png, fileName: Naming.fileName(for: date), search: nil)
+        case let .search(engine): Uploads.start(png: png, fileName: Naming.fileName(for: date), search: engine)
         case .cancel: break
         }
     }
@@ -50,10 +50,11 @@ enum Actions {
         Task {
             let marked = await TextExtraction.text(in: image)
             guard !UncertainMarks.strip(marked).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                return notify("No text found", "Snapline could not read any text in the selection.")
+                return StatusPopover.message("No text found", "Snapline could not read any text in the selection.",
+                                             symbol: "text.magnifyingglass", tint: .secondary)
             }
             if UncertainMarks.contains(marked) {
-                TextReviewPanel.show(marked)
+                TextReviewController.show(marked)
             } else {
                 finishCopyText(marked)
             }
@@ -67,7 +68,7 @@ enum Actions {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(out, forType: .string)
         let lines = out.split(separator: "\n").count
-        notify("Text copied", "\(lines) line\(lines == 1 ? "" : "s"): \(out.prefix(80))")
+        StatusPopover.message("Text copied", "\(lines) line\(lines == 1 ? "" : "s"): \(out.prefix(80))")
     }
 
     /// ⌘S: straight into the folder from Preferences (Desktop by default), never overwriting.
@@ -77,7 +78,7 @@ enum Actions {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let url = Naming.uniqueFileURL(in: dir, name: name) { FileManager.default.fileExists(atPath: $0.path) }
             try png.write(to: url)
-            notify("Screenshot saved", "\(url.lastPathComponent) in \(FileManager.default.displayName(atPath: dir.path))")
+            StatusPopover.message("Screenshot saved", "\(url.lastPathComponent) in \(FileManager.default.displayName(atPath: dir.path))")
         } catch {
             NSApp.activate()
             let alert = NSAlert(error: error)
@@ -98,16 +99,6 @@ enum Actions {
         do { try png.write(to: url) } catch { NSAlert(error: error).runModal() }
     }
 
-    static func notify(_ title: String, _ body: String) {
-        Task {
-            let center = UNUserNotificationCenter.current()
-            guard (try? await center.requestAuthorization(options: [.alert])) == true else { return }
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = body
-            try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
-        }
-    }
 
     static func print(_ image: CGImage) {
         NSApp.activate()
