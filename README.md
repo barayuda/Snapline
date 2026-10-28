@@ -166,9 +166,26 @@ Tests/SnaplineCoreTests/
 scripts/make-app.sh     bundle + ad-hoc sign
 scripts/brand/          icon and banner generator, brand fonts (OFL)
 Assets/                 AppIcon.icon (layered app icon), icon-1024.png, banner.png (generated)
+site/                   website: home, privacy policy, terms (static, deployed by Netlify)
 ```
 
 Brand colours, type and icon rules: [BRAND.md](BRAND.md).
+
+## Website
+
+<https://snapline.barayuda.web.id> is the static site in `site/` (plain HTML and CSS, no build step). Google's OAuth
+consent screen links to its privacy policy and terms, so update `site/privacy/` when the app's data handling changes.
+
+Netlify deploys only the `website` branch (set as the production branch in Netlify; branch deploys and deploy previews
+off), so pushes to `main` never deploy. To publish the current `main`:
+
+```bash
+git push origin main:website
+```
+
+Never commit to `website` directly. `netlify.toml` also skips the build when nothing under `site/` changed.
+
+To preview locally: `python3 -m http.server 8642 --directory site`, then open <http://localhost:8642>.
 
 ## Credits
 
