@@ -1,5 +1,7 @@
 # Snapline
 
+![Snapline: capture, mark up, hide what matters](Assets/banner.png)
+
 A native Apple Silicon screenshot tool for the macOS menu bar, modelled on Lightshot. Select an area, draw on it, then copy, save, print, edit, email, upload (S3 or Google Drive) or search for similar images. Sensitive data is hidden automatically on every capture.
 
 - Swift 6.4, AppKit, ScreenCaptureKit, Vision. No third-party dependencies.
@@ -95,4 +97,8 @@ Sources/Snapline/       the app: menu bar, hot key, capture, overlay, drawing, a
                         uploaders, Google sign-in, auto-hide scan, Preferences
 Tests/SnaplineCoreTests/
 scripts/make-app.sh     bundle + ad-hoc sign
+scripts/brand/          icon and banner generator, brand fonts (OFL)
+Assets/                 AppIcon.icon (layered app icon), icon-1024.png, banner.png (generated)
 ```
+
+Brand colours, type and icon rules: [BRAND.md](BRAND.md).

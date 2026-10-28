@@ -13,6 +13,9 @@ BIN="$(swift build -c release --arch arm64 --show-bin-path)/Snapline"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Snapline"
+# Layered icon (Assets.car for macOS 26+, AppIcon.icns for older). Regenerate art with: swift scripts/brand/make-brand.swift
+xcrun actool "$PWD/Assets/AppIcon.icon" --compile "$PWD/$APP/Contents/Resources" --platform macosx --target-device mac \
+  --minimum-deployment-target 15.0 --app-icon AppIcon --output-partial-info-plist "$PWD/build/icon-partial.plist" >/dev/null  # actool needs absolute paths
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -23,6 +26,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>Snapline</string>
   <key>CFBundleDisplayName</key><string>Snapline</string>
   <key>CFBundleExecutable</key><string>Snapline</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundleIconName</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleVersion</key><string>${VERSION}</string>

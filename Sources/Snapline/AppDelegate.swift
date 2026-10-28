@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Settings.registerDefaults()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Snapline")
+        statusItem.button?.image = Brand.menuBarImage
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -83,8 +83,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showAbout() {
         NSApp.activate()
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .credits: NSAttributedString(string: "Native Apple Silicon screenshot tool, inspired by Lightshot.\nBy Barayuda."),
+        let center = NSMutableParagraphStyle()
+        center.alignment = .center
+        center.paragraphSpacing = 6
+        let credits = NSMutableAttributedString(string: Brand.tagline + "\n", attributes: [
+            .font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: Brand.violetLight, .paragraphStyle: center,
         ])
+        credits.append(NSAttributedString(string: "Native on Apple Silicon. Sensitive data stays on your Mac.\nBy Barayuda.", attributes: [
+            .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: center,
+        ]))
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
     }
 }

@@ -23,13 +23,38 @@ enum PreferencesWindow {
 
 struct PreferencesView: View {
     var body: some View {
-        TabView {
-            GeneralTab().tabItem { Label("General", systemImage: "gearshape") }
-            UploadTab().tabItem { Label("Upload", systemImage: "icloud.and.arrow.up") }
-            AutoHideTab().tabItem { Label("Auto-hide", systemImage: "eye.slash") }
+        VStack(spacing: 14) {
+            BrandHeader()
+            TabView {
+                GeneralTab().tabItem { Label("General", systemImage: "gearshape") }
+                UploadTab().tabItem { Label("Upload", systemImage: "icloud.and.arrow.up") }
+                AutoHideTab().tabItem { Label("Auto-hide", systemImage: "eye.slash") }
+            }
         }
+        .tint(Color(nsColor: Brand.violet))
         .frame(width: 520)
         .padding()
+    }
+}
+
+private struct BrandHeader: View {
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 56, height: 56)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Snapline").font(.system(size: 22, weight: .bold, design: .rounded))
+                Text(Brand.tagline)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(LinearGradient(colors: [Color(nsColor: Brand.violetLight), Color(nsColor: Brand.cyan)],
+                                                    startPoint: .leading, endPoint: .trailing))
+            }
+            Spacer()
+            Text("v\(Brand.version)").font(.caption.monospaced()).foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 6)
     }
 }
 

@@ -104,11 +104,11 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     func refreshToolbarState() {
         for (i, b) in toolButtons.enumerated() {
             b.state = session.tool == Tool.allCases[i] ? .on : .off
-            b.contentTintColor = b.state == .on ? .controlAccentColor : .labelColor
+            b.contentTintColor = b.state == .on ? Brand.violetLight : .labelColor
         }
         colorButton.image = Toolbar.colorDot(session.color)
         autoHideButton.state = session.autoHideActive ? .on : .off
-        autoHideButton.contentTintColor = session.autoHideActive ? .controlAccentColor : .labelColor
+        autoHideButton.contentTintColor = session.autoHideActive ? Brand.violetLight : .labelColor
         needsDisplay = true
     }
 
@@ -216,18 +216,23 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             return
         }
 
-        NSColor.white.setStroke()
-        let border = NSBezierPath(rect: sel.insetBy(dx: -0.5, dy: -0.5))
-        border.lineWidth = 1
-        border.setLineDash([5, 3], count: 2, phase: 0)
+        // Brand frame: a cyan hairline with a soft violet glow outside it.
+        let glow = NSBezierPath(rect: sel.insetBy(dx: -2, dy: -2))
+        glow.lineWidth = 3
+        Brand.violet.withAlphaComponent(0.55).setStroke()
+        glow.stroke()
+        let border = NSBezierPath(rect: sel.insetBy(dx: -0.75, dy: -0.75))
+        border.lineWidth = 1.5
+        Brand.cyan.setStroke()
         border.stroke()
 
         if session.tool == nil, sel.width > 2 {
             for h in SelectionGeometry.Handle.allCases {
                 let c = SelectionGeometry.handlePoint(h, of: sel)
-                let r = CGRect(x: c.x - 3.5, y: c.y - 3.5, width: 7, height: 7)
-                NSColor.white.setFill(); r.fill()
-                NSColor.black.setStroke(); NSBezierPath(rect: r).stroke()
+                let dot = NSBezierPath(ovalIn: CGRect(x: c.x - 4.5, y: c.y - 4.5, width: 9, height: 9))
+                NSColor.white.setFill(); dot.fill()
+                dot.lineWidth = 2
+                Brand.violet.setStroke(); dot.stroke()
             }
         }
 
@@ -236,17 +241,17 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             let hidden = visibleHideBoxes.filter { $0.1.hidden }.count
             label += scanning ? "   ·   scanning…" : hidden > 0 ? "   ·   hiding \(hidden)" : ""
         }
-        badge(label, at: CGPoint(x: sel.minX, y: max(sel.minY - 24, 2)), centered: false)
+        badge(label, at: CGPoint(x: sel.minX, y: max(sel.minY - 26, 2)), centered: false, fill: Brand.violet)
     }
 
-    private func badge(_ text: String, at p: CGPoint, centered: Bool) {
+    private func badge(_ text: String, at p: CGPoint, centered: Bool, fill: NSColor = Brand.ink) {
         let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.white]
         let size = (text as NSString).size(withAttributes: attrs)
-        var r = CGRect(x: p.x, y: p.y, width: size.width + 12, height: size.height + 6)
+        var r = CGRect(x: p.x, y: p.y, width: size.width + 16, height: size.height + 6)
         if centered { r.origin = CGPoint(x: p.x - r.width / 2, y: p.y - r.height / 2) }
-        NSColor.black.withAlphaComponent(0.75).setFill()
-        NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5).fill()
-        (text as NSString).draw(at: CGPoint(x: r.minX + 6, y: r.minY + 3), withAttributes: attrs)
+        fill.withAlphaComponent(0.88).setFill()
+        NSBezierPath(roundedRect: r, xRadius: r.height / 2, yRadius: r.height / 2).fill()
+        (text as NSString).draw(at: CGPoint(x: r.minX + 8, y: r.minY + 3), withAttributes: attrs)
     }
 
     private var outputScale: CGFloat { UserDefaults.standard.bool(forKey: Key.downscaleRetina) ? 1 : scale }
