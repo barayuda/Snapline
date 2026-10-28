@@ -168,6 +168,10 @@ macOS/                        the macOS app (Swift package)
                               uploaders, Google sign-in, auto-hide scan, Preferences
   Tests/SnaplineCoreTests/
   scripts/make-app.sh         bundle + sign
+windows-linux/                the Windows and Linux app (Rust workspace, in progress)
+  crates/snapline-core/       the Rust twin of SnaplineCore
+fixtures/                     test cases shared by the Swift and Rust tests
+docs/                         design notes and plans
 scripts/brand/                icon and banner generator, brand fonts (OFL)
 Assets/                       AppIcon.icon (layered app icon), icon-1024.png, banner.png (generated)
 site/                         website: home, privacy policy, terms (static, deployed by Netlify)

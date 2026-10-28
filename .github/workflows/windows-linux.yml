@@ -1,0 +1,30 @@
+name: windows-linux
+
+on:
+  push:
+    paths: ["windows-linux/**", "fixtures/**", ".github/workflows/windows-linux.yml"]
+  pull_request:
+    paths: ["windows-linux/**", "fixtures/**", ".github/workflows/windows-linux.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: windows-linux
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install   # the toolchain named in rust-toolchain.toml
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: windows-linux
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test

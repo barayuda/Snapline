@@ -4,3 +4,4 @@
 .swiftpm/
 .DS_Store
 .netlify/
+/windows-linux/target/

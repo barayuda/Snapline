@@ -1,0 +1,11 @@
+[package]
+name = "snapline-core"
+version = "0.1.0"
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
