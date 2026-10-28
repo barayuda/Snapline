@@ -11,6 +11,7 @@ enum Actions {
         guard let png = pngData(image) else { return NSSound.beep() }
         switch action {
         case .copy: copy(image, png)
+        case .copyText: copyText(image)
         case .save: save(png, name: Naming.fileName(for: date))
         case .saveAs: saveAs(png, name: Naming.fileName(for: date))
         case .print: print(image)
@@ -41,6 +42,18 @@ enum Actions {
         item.setData(png, forType: .png)
         if let tiff = nsImage(image).tiffRepresentation { item.setData(tiff, forType: .tiff) }
         pb.writeObjects([item])
+    }
+
+    /// ⇧⌘C: recognise the text in the (already flattened) image, so hidden areas stay hidden.
+    static func copyText(_ image: CGImage) {
+        Task {
+            let text = await TextExtraction.text(in: image)
+            guard !text.isEmpty else { return notify("No text found", "Snapline could not read any text in the selection.") }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            let lines = text.split(separator: "\n").count
+            notify("Text copied", "\(lines) line\(lines == 1 ? "" : "s"): \(text.prefix(80))")
+        }
     }
 
     /// ⌘S: straight into the folder from Preferences (Desktop by default), never overwriting.

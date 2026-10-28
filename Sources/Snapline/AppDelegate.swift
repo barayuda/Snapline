@@ -89,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let credits = NSMutableAttributedString(string: Brand.tagline + "\n", attributes: [
             .font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: Brand.violetLight, .paragraphStyle: center,
         ])
-        credits.append(NSAttributedString(string: "Native on Apple Silicon. Sensitive data stays on your Mac.\nBy Barayuda.", attributes: [
+        credits.append(NSAttributedString(string: Brand.privacyNotice + "\n\nNative on Apple Silicon. By Barayuda.", attributes: [
             .font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: center,
         ]))
         NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])

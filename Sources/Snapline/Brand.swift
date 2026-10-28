@@ -4,6 +4,14 @@ import AppKit
 enum Brand {
     static let tagline = "Capture. Mark up. Hide what matters."
 
+    /// Shown in the About panel; the README "Privacy" section says the same. Keep both true:
+    /// check every network call (Uploaders.swift, GoogleAuth.swift) before changing them.
+    static let privacyNotice = """
+        Private by design: capture, drawing, auto-hide and text recognition run entirely on this Mac. \
+        Snapline has no servers and no analytics, and no third party receives your screenshots to read or analyse them. \
+        An image leaves your Mac only when you choose Upload, Search or Email, and only to the place you chose.
+        """
+
     static let violet = NSColor(srgbRed: 0x7C / 255, green: 0x3A / 255, blue: 0xED / 255, alpha: 1)
     static let violetLight = NSColor(srgbRed: 0x8B / 255, green: 0x5C / 255, blue: 0xF6 / 255, alpha: 1)
     static let cyan = NSColor(srgbRed: 0x22 / 255, green: 0xD3 / 255, blue: 0xEE / 255, alpha: 1)

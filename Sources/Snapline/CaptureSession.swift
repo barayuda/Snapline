@@ -23,7 +23,7 @@ enum SearchEngine: String, CaseIterable {
 @MainActor
 final class CaptureSession: NSObject {
     enum Action {
-        case copy, save, saveAs, upload, print, edit, email, cancel
+        case copy, copyText, save, saveAs, upload, print, edit, email, cancel
         case search(SearchEngine)
     }
 

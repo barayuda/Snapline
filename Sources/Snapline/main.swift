@@ -1,13 +1,18 @@
 import AppKit
 
-// Diagnostic: `Snapline --scan image.png` prints what auto-hide would cover, then exits.
-if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--scan" {
+// Diagnostics: `Snapline --scan image.png` prints what auto-hide would cover;
+// `Snapline --text image.png` prints what Copy Text would copy. Both exit afterwards.
+if CommandLine.arguments.count == 3, ["--scan", "--text"].contains(CommandLine.arguments[1]) {
     Settings.registerDefaults()
     guard let image = NSImage(contentsOfFile: CommandLine.arguments[2])?.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
         print("Cannot read \(CommandLine.arguments[2])")
         exit(1)
     }
     Task {
+        if CommandLine.arguments[1] == "--text" {
+            print(await TextExtraction.text(in: image))
+            exit(0)
+        }
         let size = CGSize(width: image.width, height: image.height)
         for box in await Redaction.scan(image, viewSize: size, categories: Settings.autoHideCategories) {
             print(box.category.rawValue, box.rect.integral)

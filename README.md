@@ -5,8 +5,25 @@
 A native Apple Silicon screenshot tool for the macOS menu bar, modelled on Lightshot. Select an area, draw on it, then copy, save, print, edit, email, upload (S3 or Google Drive) or search for similar images. Sensitive data is hidden automatically on every capture.
 
 - Swift 6.4, AppKit, ScreenCaptureKit, Vision. No third-party dependencies.
+- Copy the text out of any screenshot, read on your Mac.
 - arm64 only, macOS 15 or newer.
 - Written from scratch: Snapline shares no code or artwork with Lightshot.
+
+## Privacy
+
+Snapline is private by design. It has no servers, no accounts of its own, no analytics and no tracking.
+
+- **Everything runs on your Mac.** Capturing, drawing, auto-hide and Copy Text use Apple's built-in frameworks
+  (ScreenCaptureKit, Vision) on this device. No screenshot and no recognised text is sent to Snapline or to any third
+  party to be read, analysed or stored.
+- **An image leaves your Mac only when you ask it to:**
+  - **Upload** sends it to the destination you set up: your own S3 bucket or your own Google Drive.
+  - **Search** uploads it there first, then opens Google Lens or TinEye in your browser with that link.
+  - **Email** hands the file to your mail app.
+- **Secrets stay in the macOS Keychain**: bucket keys and the Google sign-in token. Google sign-in runs in your browser;
+  Snapline only receives the result on a local address (127.0.0.1).
+
+You can check this in the code: all network calls are in `Sources/Snapline/Uploaders.swift` and `GoogleAuth.swift`.
 
 ## Build and run
 
@@ -31,7 +48,8 @@ On the first capture macOS asks for **Screen Recording** permission (System Sett
 | Line width | Scroll wheel, or + / − |
 | Text | Text tool, click, type, Return. Scroll while typing to change size. Drag a finished text with the text tool to move it |
 | Undo | ⌘Z |
-| Copy | ⌘C or Return |
+| Copy image | ⌘C or Return |
+| Copy text | ⇧⌘C or the text button: reads the text in the selection on your Mac and copies it as plain text. Hidden areas are not read |
 | Save | ⌘S saves straight to the folder set in Preferences → General (Desktop by default) as `Screenshot at MMM dd HH-mm-ss.png`; never overwrites. ⌥⌘S (or ⌥-click Save) opens a Save As dialog |
 | Upload | ⌘D. The link is copied to the clipboard |
 | Edit in another app | ⌘E (Preview by default; choose another app in Preferences) |
@@ -49,10 +67,11 @@ When the screen freezes, Snapline reads it with Apple's on-device text recogniti
 - The boxes are merged into the pixels of everything you copy, save, print, edit, email or upload.
 - **It is a safety net, not a guarantee.** Very small, faint, rotated or stylised text can be missed. Check the image before you share it. Use the Hide tool (H) for anything it missed.
 
-To check what it would hide in an image without capturing the screen:
+To check what auto-hide would cover, or what Copy Text would copy, in an image without capturing the screen:
 
 ```bash
 .build/debug/Snapline --scan some-image.png
+.build/debug/Snapline --text some-image.png
 ```
 
 ## Upload setup

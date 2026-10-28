@@ -80,7 +80,8 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             ("slider.horizontal.3", "Edit in external app (⌘E)", .edit),
             ("envelope", "Email", .email),
             ("printer", "Print (⌘P)", .print),
-            ("doc.on.doc", "Copy (⌘C)", .copy),
+            ("doc.on.doc", "Copy image (⌘C)", .copy),
+            ("text.viewfinder", "Copy text (⇧⌘C), read on this Mac", .copyText),
             ("square.and.arrow.down", "Save to default folder (⌘S) · ⌥-click or ⌥⌘S: Save As…", .save),
             ("xmark", "Close (Esc)", .cancel),
         ]
@@ -443,7 +444,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         default:
             if flags.contains(.command) {
                 switch chars {
-                case "c": session.perform(.copy)
+                case "c": session.perform(flags.contains(.shift) ? .copyText : .copy)
                 case "s": session.perform(flags.contains(.option) ? .saveAs : .save)
                 case "d": session.perform(.upload)
                 case "p": session.perform(.print)
