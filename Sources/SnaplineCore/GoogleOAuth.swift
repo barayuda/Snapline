@@ -62,10 +62,23 @@ public enum GoogleOAuth {
             throw CallbackError(message: "Unexpected sign-in response.")
         }
         let query = Dictionary((c.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })
-        if let error = query["error"] { throw CallbackError(message: "Google sign-in failed: \(error)") }
+        // State first: a request that does not carry our state must not decide anything, not even an error.
         guard query["state"] == expectedState else { throw CallbackError(message: "Sign-in state did not match.") }
+        if let error = query["error"] { throw CallbackError(message: "Google sign-in failed: \(error)") }
         guard let code = query["code"], !code.isEmpty else { throw CallbackError(message: "No sign-in code received.") }
         return code
+    }
+
+    /// The page the browser shows after the redirect. `message` is escaped: it can contain text from the request.
+    public static func callbackPage(message: String) -> String {
+        let escaped = message
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
+        return "<!doctype html><meta charset=utf-8><title>Snapline</title>"
+            + "<body style='font:16px -apple-system;padding:40px'>\(escaped)"
     }
 
     /// Form body for the token endpoint.

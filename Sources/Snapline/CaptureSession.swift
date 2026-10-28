@@ -87,13 +87,24 @@ final class CaptureSession: NSObject {
         onEnd()
     }
 
+    private var isPerforming = false
+
     func perform(_ action: Action) {
         if case .cancel = action { return close() }
-        guard let view = views.first(where: { ($0.selection?.width ?? 0) >= 1 }), let image = view.renderSelection() else {
+        guard !isPerforming, let view = views.first(where: { ($0.selection?.width ?? 0) >= 1 }) else {
             return NSSound.beep()
         }
-        close()
-        Actions.run(action, image: image)
+        isPerforming = true
+        Task {
+            // Never export before auto-hide has found what to hide: an early ⌘C/⌘S/⌘D would leak it.
+            // The scan usually ends while the user is still selecting; otherwise this waits on "scanning…".
+            if autoHideActive { await view.scanFinished() }
+            defer { isPerforming = false }
+            guard !windows.isEmpty else { return }  // closed with Esc while waiting
+            guard let image = view.renderSelection() else { return NSSound.beep() }
+            close()
+            Actions.run(action, image: image)
+        }
     }
 
     // MARK: - Color panel

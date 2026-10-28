@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        statusItem.button?.setAccessibilityHelp("Click to take a screenshot. Right-click or Control-click for the menu.")
         refreshMenu()
 
         HotKey.shared.onPress = { [weak self] in self?.startCapture() }

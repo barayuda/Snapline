@@ -13,6 +13,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     private var annotations: [Annotation] = []
     private var hideBoxes: [HideBox] = []
     private var scanning = true
+    private var scan: Task<Void, Never>?
 
     private enum Undo { case annotation, toggle(Int) }
     private var undoStack: [Undo] = []
@@ -48,7 +49,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeAlways, .inVisibleRect, .cursorUpdate], owner: self))
 
         let viewSize = bounds.size
-        Task {
+        scan = Task {
             hideBoxes = await Redaction.scan(shot.image, viewSize: viewSize, categories: Settings.autoHideCategories)
             scanning = false
             needsDisplay = true
@@ -257,6 +258,9 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     }
 
     private var outputScale: CGFloat { UserDefaults.standard.bool(forKey: Key.downscaleRetina) ? 1 : scale }
+
+    /// Returns once the auto-hide scan has found everything it will hide.
+    func scanFinished() async { await scan?.value }
 
     /// Flattens image, hide boxes and annotations of the selection into one bitmap.
     func renderSelection() -> CGImage? {

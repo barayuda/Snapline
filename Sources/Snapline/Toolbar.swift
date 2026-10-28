@@ -35,6 +35,9 @@ final class Toolbar: NSVisualEffectView {
         b.isBordered = false
         b.setButtonType(.pushOnPushOff)
         b.toolTip = tip
+        // Spoken label without the shortcut hint: "Upload and copy link", not "… (⌘D)". It is set on the
+        // button itself so it survives image changes (the color button swaps its image).
+        b.setAccessibilityLabel(tip.components(separatedBy: " (").first ?? tip)
         b.tag = tag
         b.widthAnchor.constraint(equalToConstant: 30).isActive = true
         b.heightAnchor.constraint(equalToConstant: 28).isActive = true

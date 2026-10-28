@@ -100,7 +100,7 @@ private struct GeneralTab: View {
     @State private var recording = false
     @State private var monitor: Any?
     @State private var hotKeyError: String?
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var launchAtLogin = false   // loaded in onAppear: this view is kept alive between opens
     @State private var loginError: String?
 
     var body: some View {
@@ -128,8 +128,9 @@ private struct GeneralTab: View {
                 }
             }
 
-            Toggle("Launch at login", isOn: $launchAtLogin)
-                .onChange(of: launchAtLogin) { _, on in setLaunchAtLogin(on) }
+            // A Binding, not onChange: setLaunchAtLogin writes launchAtLogin back, and onChange would then
+            // fire again and undo the registration (e.g. when macOS asks for approval first).
+            Toggle("Launch at login", isOn: Binding(get: { launchAtLogin }, set: { setLaunchAtLogin($0) }))
             if let loginError { Text(loginError).foregroundStyle(.red).font(.caption) }
 
             Toggle("Downscale Retina screens (save at 1× size)", isOn: $downscaleRetina)
@@ -147,6 +148,9 @@ private struct GeneralTab: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { launchAtLogin = SMAppService.mainApp.status == .enabled }
+        // Closing Preferences mid-recording must not leave the key monitor running or the hotkey off.
+        .onDisappear { if recording { stopRecording() } }
     }
 
     private func startRecording() {
@@ -223,10 +227,11 @@ private struct UploadTab: View {
     @AppStorage(Key.s3Prefix) private var prefix = "snapline"
     @AppStorage(Key.googleClientID) private var clientID = ""
     @AppStorage(Key.googleEmail) private var googleEmail = ""
-    @State private var accessKey = Keychain.get(.s3AccessKey) ?? ""
-    @State private var secretKey = Keychain.get(.s3SecretKey) ?? ""
-    @State private var clientSecret = Keychain.get(.googleClientSecret) ?? ""
-    @State private var signedIn = GoogleAuth.shared.isSignedIn
+    // Loaded in onAppear (this view is kept alive between opens, so initial values would go stale).
+    @State private var accessKey = ""
+    @State private var secretKey = ""
+    @State private var clientSecret = ""
+    @State private var signedIn = false
     @State private var busy = false
     @State private var message: String?
 
@@ -248,9 +253,9 @@ private struct UploadTab: View {
                 }
                 Section("Keys (stored in the Keychain)") {
                     TextField("Access key ID", text: $accessKey)
-                        .onChange(of: accessKey) { _, v in Keychain.set(.s3AccessKey, v.trimmingCharacters(in: .whitespaces)) }
+                        .onChange(of: accessKey) { _, v in save(.s3AccessKey, v) }
                     SecureField("Secret access key", text: $secretKey)
-                        .onChange(of: secretKey) { _, v in Keychain.set(.s3SecretKey, v.trimmingCharacters(in: .whitespaces)) }
+                        .onChange(of: secretKey) { _, v in save(.s3SecretKey, v) }
                 }
                 Text("Uploads are public to anyone with the link. Do not upload guest or customer data.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -258,7 +263,7 @@ private struct UploadTab: View {
                 Section {
                     TextField("Client ID", text: $clientID, prompt: Text("Paste: …apps.googleusercontent.com"))
                     SecureField("Client secret", text: $clientSecret, prompt: Text("Paste: GOCSPX-…"))
-                        .onChange(of: clientSecret) { _, v in Keychain.set(.googleClientSecret, v.trimmingCharacters(in: .whitespaces)) }
+                        .onChange(of: clientSecret) { _, v in save(.googleClientSecret, v) }
                 } header: {
                     Text("Google Cloud OAuth client (type: Desktop app)")
                 } footer: {
@@ -291,6 +296,7 @@ private struct UploadTab: View {
             if let message { Text(message).font(.caption).foregroundStyle(.red) }
         }
         .formStyle(.grouped)
+        .onAppear(perform: load)
     }
 
     private var hasClient: Bool {
@@ -311,6 +317,17 @@ private struct UploadTab: View {
     private func refresh() {
         signedIn = GoogleAuth.shared.isSignedIn
         googleEmail = GoogleAuth.shared.email ?? ""
+    }
+
+    private func load() {
+        accessKey = Keychain.get(.s3AccessKey) ?? ""
+        secretKey = Keychain.get(.s3SecretKey) ?? ""
+        clientSecret = Keychain.get(.googleClientSecret) ?? ""
+        refresh()
+    }
+
+    private func save(_ secret: Secret, _ value: String) {
+        message = Keychain.set(secret, value.trimmingCharacters(in: .whitespaces)) ? nil : "Could not save to the Keychain."
     }
 }
 

@@ -42,6 +42,23 @@ final class GoogleOAuthTests: XCTestCase {
         XCTAssertEqual(try GoogleOAuth.code(fromRequestLine: line, expectedState: "xyz"), "4/0Abc")
     }
 
+    func testStateIsCheckedBeforeAnErrorIsTrusted() {
+        // A request without our state must not be able to end sign-in with its own error text.
+        XCTAssertThrowsError(try GoogleOAuth.code(fromRequestLine: "GET /?error=%3Cscript%3E HTTP/1.1", expectedState: "xyz")) {
+            XCTAssertEqual(($0 as? GoogleOAuth.CallbackError)?.message, "Sign-in state did not match.")
+        }
+        // With the right state, Google's error is reported.
+        XCTAssertThrowsError(try GoogleOAuth.code(fromRequestLine: "GET /?error=access_denied&state=xyz HTTP/1.1", expectedState: "xyz")) {
+            XCTAssertEqual(($0 as? GoogleOAuth.CallbackError)?.message, "Google sign-in failed: access_denied")
+        }
+    }
+
+    func testCallbackPageEscapesHTML() {
+        let page = GoogleOAuth.callbackPage(message: "failed: <script>alert(1)</script> & \"x\"")
+        XCTAssertFalse(page.contains("<script>"))
+        XCTAssertTrue(page.contains("&lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;x&quot;"))
+    }
+
     func testCallbackParsingRejectsWrongStateAndErrors() {
         XCTAssertThrowsError(try GoogleOAuth.code(fromRequestLine: "GET /?state=evil&code=1 HTTP/1.1", expectedState: "xyz"))
         XCTAssertThrowsError(try GoogleOAuth.code(fromRequestLine: "GET /?error=access_denied&state=xyz HTTP/1.1", expectedState: "xyz"))

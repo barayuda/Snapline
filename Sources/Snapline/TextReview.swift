@@ -59,6 +59,7 @@ final class TextReviewController: NSViewController {
                 b.bezelStyle = .smallSquare
                 b.font = .systemFont(ofSize: 15)
                 b.toolTip = ShortcutWords.convert(String(symbol))
+                b.setAccessibilityLabel(b.toolTip)  // "Cmd", not "place of interest sign"
                 b.widthAnchor.constraint(equalToConstant: 34).isActive = true
                 return b
             })

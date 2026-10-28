@@ -24,13 +24,13 @@ final class GoogleAuth {
         guard let (clientID, clientSecret) = credentials else {
             throw UploadError(message: "Enter the Google OAuth client ID and secret first.")
         }
-        let server = try LoopbackServer()
+        let state = UUID().uuidString
+        let server = try LoopbackServer(state: state)
         let port = try await server.start()
         defer { server.stop() }
 
         let redirect = "http://127.0.0.1:\(port)"
         let verifier = PKCE.makeVerifier()
-        let state = UUID().uuidString
         NSWorkspace.shared.open(GoogleOAuth.authorizationURL(clientID: clientID, redirectURI: redirect,
                                                              challenge: PKCE.challenge(for: verifier), state: state))
 
@@ -99,14 +99,20 @@ final class GoogleAuth {
 }
 
 /// Accepts the single browser redirect from Google on 127.0.0.1:<random port>.
+/// `@unchecked Sendable`: all mutable state (`connection`, `callback`, `early`, `ready`) is only touched on `queue`
+/// (`ready` is set before the listener starts, so before any handler can run).
 private final class LoopbackServer: @unchecked Sendable {
     private let listener: NWListener
+    private let state: String
     private let queue = DispatchQueue(label: "snapline.oauth")
     private var connection: NWConnection?
     private var callback: CheckedContinuation<String, Error>?
+    /// A redirect that arrived before `waitForCallback` was called.
+    private var early: Result<String, Error>?
     private var ready: CheckedContinuation<UInt16, Error>?
 
-    init() throws {
+    init(state: String) throws {
+        self.state = state
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         listener = try NWListener(using: params)
@@ -115,13 +121,20 @@ private final class LoopbackServer: @unchecked Sendable {
     func start() async throws -> UInt16 {
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<UInt16, Error>) in
             ready = c
-            // State changes arrive on `queue`, so `ready` is only touched there after this point.
             listener.stateUpdateHandler = { [weak self] state in
                 guard let self, let ready else { return }
                 switch state {
-                case .ready: self.ready = nil; ready.resume(returning: listener.port?.rawValue ?? 0)
-                case let .failed(error): self.ready = nil; ready.resume(throwing: error)
-                default: break
+                case .ready:
+                    self.ready = nil
+                    ready.resume(returning: listener.port?.rawValue ?? 0)
+                case let .failed(error), let .waiting(error):
+                    self.ready = nil
+                    ready.resume(throwing: error)
+                case .cancelled:
+                    self.ready = nil
+                    ready.resume(throwing: CancellationError())
+                default:
+                    break
                 }
             }
             listener.newConnectionHandler = { [weak self] conn in self?.accept(conn) }
@@ -129,13 +142,18 @@ private final class LoopbackServer: @unchecked Sendable {
         }
     }
 
-    /// Waits up to 5 minutes for the redirect that carries `state=` (ignores favicon requests).
+    /// Waits up to 5 minutes for the redirect that carries our state (other requests get a 404).
     func waitForCallback() async throws -> String {
         try await withCheckedThrowingContinuation { c in
-            queue.async {
+            queue.async { [weak self] in
+                guard let self else { return c.resume(throwing: CancellationError()) }
+                if let early = self.early {
+                    self.early = nil
+                    return c.resume(with: early)
+                }
                 self.callback = c
-                self.queue.asyncAfter(deadline: .now() + 300) {
-                    self.finish(.failure(UploadError(message: "Google sign-in timed out.")))
+                self.queue.asyncAfter(deadline: .now() + 300) { [weak self] in
+                    self?.finish(.failure(UploadError(message: "Google sign-in timed out.")))
                 }
             }
         }
@@ -146,7 +164,8 @@ private final class LoopbackServer: @unchecked Sendable {
         conn.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self] data, _, _, _ in
             guard let self else { return }
             let line = data.flatMap { String(data: $0, encoding: .utf8) }?.components(separatedBy: "\r\n").first ?? ""
-            if line.contains("state=") || line.contains("error=") {
+            // Only the redirect carrying our state counts; anything else (favicon, stray local requests) gets a 404.
+            if connection == nil, line.contains("state=\(state)") {
                 connection = conn
                 finish(.success(line))
             } else {
@@ -157,7 +176,10 @@ private final class LoopbackServer: @unchecked Sendable {
     }
 
     private func finish(_ result: Result<String, Error>) {
-        guard let c = callback else { return }
+        guard let c = callback else {
+            if early == nil { early = result }   // waitForCallback has not started yet
+            return
+        }
         callback = nil
         c.resume(with: result)
     }
@@ -165,7 +187,7 @@ private final class LoopbackServer: @unchecked Sendable {
     func reply(_ message: String) {
         queue.async {
             guard let conn = self.connection else { return }
-            let html = "<!doctype html><meta charset=utf-8><title>Snapline</title><body style='font:16px -apple-system;padding:40px'>\(message)"
+            let html = GoogleOAuth.callbackPage(message: message)
             let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n\(html)"
             conn.send(content: Data(response.utf8), completion: .contentProcessed { _ in conn.cancel() })
         }

@@ -83,13 +83,20 @@ enum Keychain {
         return String(data: data, encoding: .utf8)
     }
 
-    /// Empty or nil value deletes the item.
-    static func set(_ secret: Secret, _ value: String?) {
-        SecItemDelete(query(secret) as CFDictionary)
-        guard let value, !value.isEmpty else { return }
+    /// Saves `value` (empty or nil deletes the item). Returns false if the Keychain refused.
+    /// Updates in place, so there is never a moment without the item; adds it the first time.
+    /// (No accessibility attribute: the login keychain this app uses ignores it.)
+    @discardableResult
+    static func set(_ secret: Secret, _ value: String?) -> Bool {
+        guard let value, !value.isEmpty else {
+            let status = SecItemDelete(query(secret) as CFDictionary)
+            return status == errSecSuccess || status == errSecItemNotFound
+        }
+        let data = Data(value.utf8)
+        let status = SecItemUpdate(query(secret) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        guard status == errSecItemNotFound else { return status == errSecSuccess }
         var q = query(secret)
-        q[kSecValueData as String] = Data(value.utf8)
-        q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(q as CFDictionary, nil)
+        q[kSecValueData as String] = data
+        return SecItemAdd(q as CFDictionary, nil) == errSecSuccess
     }
 }

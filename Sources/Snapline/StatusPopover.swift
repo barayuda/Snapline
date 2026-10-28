@@ -40,9 +40,14 @@ enum StatusPopover {
         autoClose?.cancel()
         let shown = popover
         autoClose = Task {
-            try? await Task.sleep(for: .seconds(seconds))
-            while keepOpen?() == true { try? await Task.sleep(for: .milliseconds(500)) }
-            guard !Task.isCancelled, popover === shown else { return }
+            // `try`, not `try?`: a cancelled sleep throws at once, and swallowing that would spin this loop.
+            do {
+                try await Task.sleep(for: .seconds(seconds))
+                while keepOpen?() == true { try await Task.sleep(for: .milliseconds(500)) }
+            } catch {
+                return
+            }
+            guard popover === shown else { return }
             close()
         }
     }
@@ -75,6 +80,11 @@ enum StatusPopover {
         .padding(14)
         .frame(width: 300, alignment: .leading)
         show(NSHostingController(rootView: view), kind: .message, closeAfter: 2.5)
+        // The popover never takes focus and closes after 2.5 s, so tell VoiceOver directly.
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
+            .announcement: "\(title). \(detail)",
+            .priority: NSAccessibilityPriorityLevel.high.rawValue,
+        ])
     }
 
     // MARK: - Icon

@@ -229,9 +229,13 @@ struct Ink {
         width = image.width
         height = image.height
         var gray = [UInt8](repeating: 0, count: width * height)
-        let c = CGContext(data: &gray, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width,
-                          space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)!
-        c.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        // The buffer pointer is only valid inside this closure, so create the context and draw within it.
+        let (w, h) = (width, height)
+        gray.withUnsafeMutableBytes { buffer in
+            let c = CGContext(data: buffer.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
+                              space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+            c?.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        }
 
         // Background = the median of the border pixels.
         var border: [UInt8] = []
