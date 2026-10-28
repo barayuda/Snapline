@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Observation
 import ServiceManagement
 import SnaplineCore
@@ -159,7 +160,7 @@ private struct GeneralTab: View {
         HotKey.shared.unregister()
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let mods = HotKey.carbonModifiers(event.modifierFlags)
-            if event.keyCode == 53 { stopRecording(); return nil }  // Esc cancels
+            if event.keyCode == kVK_Escape { stopRecording(); return nil }  // Esc cancels
             guard event.modifierFlags.intersection([.command, .control, .option]).isEmpty == false else {
                 hotKeyError = "Use at least one of ⌘, ⌃ or ⌥."
                 return nil

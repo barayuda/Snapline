@@ -5,7 +5,7 @@ import Foundation
 /// Signs every header already set on the request plus `host` and `x-amz-date`.
 public struct SigV4Signer: Sendable {
     public let accessKey: String
-    public let secretKey: String
+    private let secretKey: String
     public let region: String
     public let service: String
 
@@ -16,6 +16,8 @@ public struct SigV4Signer: Sendable {
         self.service = service
     }
 
+    /// Adds `x-amz-date` and `Authorization` to `request`, signing every header already set plus `host`.
+    /// `payloadHash` is the hex SHA-256 of the body (see `sha256Hex`). Returns the request unsigned if its URL has no host.
     public func sign(_ request: URLRequest, payloadHash: String, date: Date) -> URLRequest {
         var request = request
         let amzDate = Self.format(date, "yyyyMMdd'T'HHmmss'Z'")
@@ -74,10 +76,7 @@ public struct SigV4Signer: Sendable {
             .joined(separator: "&")
     }
 
-    static func uriEncode(_ s: String) -> String {
-        let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
-        return s.addingPercentEncoding(withAllowedCharacters: unreserved) ?? s
-    }
+    static func uriEncode(_ s: String) -> String { PercentEncoding.unreserved(s) }
 
     static func format(_ date: Date, _ pattern: String) -> String {
         let f = DateFormatter()

@@ -6,6 +6,7 @@ public enum SelectionGeometry {
         case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
     }
 
+    /// The rectangle spanned by two corner points, in any order.
     public static func rect(from a: CGPoint, to b: CGPoint) -> CGRect {
         CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
     }
@@ -28,6 +29,7 @@ public enum SelectionGeometry {
         return CGRect(x: minX, y: box.minY, width: maxX - minX, height: box.height)
     }
 
+    /// `rect` moved by `d`, kept fully inside `bounds`.
     public static func move(_ rect: CGRect, by d: CGVector, within bounds: CGRect) -> CGRect {
         var r = rect.offsetBy(dx: d.dx, dy: d.dy)
         r.origin.x = min(max(r.minX, bounds.minX), bounds.maxX - r.width)
@@ -35,6 +37,7 @@ public enum SelectionGeometry {
         return r
     }
 
+    /// Centre point of a resize handle on `r`.
     public static func handlePoint(_ h: Handle, of r: CGRect) -> CGPoint {
         switch h {
         case .topLeft: CGPoint(x: r.minX, y: r.minY)
@@ -48,6 +51,7 @@ public enum SelectionGeometry {
         }
     }
 
+    /// The resize handle within `tolerance` points of `p`, if any.
     public static func handle(at p: CGPoint, in r: CGRect, tolerance: CGFloat) -> Handle? {
         Handle.allCases.first {
             let h = handlePoint($0, of: r)

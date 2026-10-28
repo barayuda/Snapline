@@ -1,126 +1,128 @@
 import CoreGraphics
-import XCTest
+import Testing
 @testable import SnaplineCore
 
-final class SymbolRepairTests: XCTestCase {
-    private let dark = (fg: CGFloat(0.92), bg: CGFloat(0.11))
-    private let light = (fg: CGFloat(0.05), bg: CGFloat(1.0))
+/// Glyph images are drawn with the system font, like the templates. A macOS font update could change the
+/// measured table below; if a row breaks after an OS update, re-measure it rather than loosening the check.
+///
+/// Serialized: drawing symbols makes CoreText ask the font service (fontd) for fallback fonts over a synchronous
+/// XPC call. With every test-pool thread doing that at once the run deadlocked (seen on macOS 27); one at a time it
+/// takes about 1.5 s. The app draws from a single task, so it is not affected.
+@Suite(.serialized)
+struct SymbolRepairTests {
+    static let dark = (fg: CGFloat(0.92), bg: CGFloat(0.11))
+    static let light = (fg: CGFloat(0.05), bg: CGFloat(1.0))
 
-    /// Draws `text` like a screenshot would show it, then repairs what text recognition read.
-    private func repaired(_ read: String, drawn: String, size: CGFloat = 28, colors: (fg: CGFloat, bg: CGFloat)? = nil) -> String {
-        let c = colors ?? dark
-        let image = SymbolRepair.render(drawn, size: size, foreground: c.fg, background: c.bg)
-        return SymbolRepair.repair(read, in: image)
+    /// Draws `drawn` like a screenshot shows it, then checks what text recognition `read`.
+    private func check(_ read: String, drawn: String, size: CGFloat = 28, colors: (fg: CGFloat, bg: CGFloat) = dark) -> SymbolRepair.Check {
+        SymbolRepair.check(read, in: SymbolRepair.render(drawn, size: size, foreground: colors.fg, background: colors.bg))
     }
 
-    func testShortcutSymbolsAreRestored() {
-        XCTAssertEqual(repaired("+9C", drawn: "⇧⌘C"), "⇧⌘C")
-        XCTAssertEqual(repaired("+9C,", drawn: "⇧⌘C,"), "⇧⌘C,")
-        XCTAssertEqual(repaired("9Z", drawn: "⌘Z"), "⌘Z")
-        XCTAssertEqual(repaired("^TH", drawn: "⌃⌥H"), "⌃⌥H")
+    private func repaired(_ read: String, drawn: String, size: CGFloat = 28, colors: (fg: CGFloat, bg: CGFloat) = dark) -> String {
+        check(read, drawn: drawn, size: size, colors: colors).text
     }
 
-    /// (what Vision read, the symbol on screen), measured on macOS 27 at 15 and 26 pt.
-    private let measured: [(read: String, symbol: String)] = [
+    // MARK: Measured misreads
+
+    struct Misread: CustomTestStringConvertible, Sendable {
+        let read: String
+        let symbol: String
+        var testDescription: String { "\(read) → \(symbol)" }
+    }
+
+    /// What Vision read instead of the symbol on screen, measured on macOS 27 at 15 and 26 pt.
+    static let measured = [
         ("4", "⇧"), ("D", "⎋"), ("®", "⌦"), ("&", "⇪"), ("|", "⇪"), ("&", "⏎"), ("«", "⇤"), ("I", "⇤"),
         ("#", "⇞"), ("‡", "⇟"), ("&", "↖"), ("y", "↘"), ("&", "⏏"), ("P", "↩"), ("‡", "≠"), ("+", "±"), ("v", "✓"),
         ("→", "⇥"),
-    ]
+    ].map { Misread(read: $0.0, symbol: $0.1) }
 
     /// Retina pixel sizes of 15 pt and 26 pt text, as on a MacBook screen.
-    private let retina: [CGFloat] = [30, 52]
+    static let retina: [CGFloat] = [30, 52]
 
-    func testEveryMeasuredMisreadIsRestoredOnRetina() {
-        for (read, symbol) in measured {
-            for size in retina {
-                XCTAssertEqual(repaired(read, drawn: symbol, size: size), symbol, "\(read) → \(symbol) at \(size) px")
-            }
-        }
+    @Test(arguments: measured, retina)
+    func measuredMisreadIsRestoredOnRetina(_ m: Misread, size: CGFloat) {
+        #expect(repaired(m.read, drawn: m.symbol, size: size) == m.symbol)
     }
 
-    func testTinyNonRetinaSymbolsAreRestoredOrFlaggedNeverWrong() {
-        for (read, symbol) in measured {
-            let result = SymbolRepair.check(read, in: SymbolRepair.render(symbol, size: 15, foreground: dark.fg, background: dark.bg))
-            XCTAssertTrue(result.text == symbol || (result.text == read && result.uncertain),
-                          "\(read) → \(symbol) at 15 px gave \(result.text), uncertain \(result.uncertain)")
-        }
+    @Test(arguments: measured)
+    func tinyNonRetinaSymbolIsRestoredOrFlaggedNeverWrong(_ m: Misread) {
+        let result = check(m.read, drawn: m.symbol, size: 15)
+        #expect(result.text == m.symbol || (result.text == m.read && result.isUncertain), "gave \(result)")
     }
 
-    func testTheRealLookAlikeCharactersStayAsTheyAre() {
-        for read in Set(measured.map(\.read)) {
-            for size in [CGFloat(15)] + retina {
-                let result = SymbolRepair.check(read, in: SymbolRepair.render(read, size: size, foreground: dark.fg, background: dark.bg))
-                XCTAssertEqual(result.text, read, "real \(read) at \(size) px")
-                XCTAssertFalse(result.uncertain, "real \(read) at \(size) px should not ask for review")
-            }
-        }
-        // And in ordinary words.
-        for word in ["4K", "Day", "Pay", "IDE", "y=2", "#42", "A&B", "x|y", "v2"] {
-            XCTAssertEqual(repaired(word, drawn: word), word)
-        }
+    @Test(arguments: Set(measured.map(\.read)).sorted(), [CGFloat(15)] + retina)
+    func realLookAlikeCharacterStaysAndIsNotFlagged(_ read: String, size: CGFloat) {
+        #expect(check(read, drawn: read, size: size) == SymbolRepair.Check(text: read, isUncertain: false))
     }
 
-    func testWorksOnLightBackgroundAndOtherSizes() {
-        XCTAssertEqual(repaired("+9C", drawn: "⇧⌘C", size: 15, colors: light), "⇧⌘C")
-        XCTAssertEqual(repaired("9Z", drawn: "⌘Z", size: 44, colors: light), "⌘Z")
+    // MARK: Words
+
+    @Test(arguments: [
+        ("+9C", "⇧⌘C"), ("+9C,", "⇧⌘C,"), ("9Z", "⌘Z"), ("^TH", "⌃⌥H"),
+    ])
+    func shortcutSymbolsAreRestored(read: String, drawn: String) {
+        #expect(repaired(read, drawn: drawn) == drawn)
     }
 
-    func testRealCharactersAreLeftAlone() {
-        XCTAssertEqual(repaired("2026", drawn: "2026"), "2026")
-        XCTAssertEqual(repaired("9C", drawn: "9C"), "9C")
-        XCTAssertEqual(repaired("T1+V", drawn: "T1+V"), "T1+V")
-        XCTAssertEqual(repaired("x^2", drawn: "x^2"), "x^2")
-        XCTAssertEqual(repaired("Version", drawn: "Version"), "Version")
+    @Test(arguments: [
+        "2026", "9C", "T1+V", "x^2", "Version", "4K", "Day", "Pay", "IDE", "y=2", "#42", "A&B", "x|y", "v2",
+    ])
+    func realWordsAreLeftAlone(_ word: String) {
+        #expect(repaired(word, drawn: word) == word)
     }
 
-    func testWordWithoutSuspectsIsNotTouched() {
+    @Test func worksOnLightBackgroundAndOtherSizes() {
+        #expect(repaired("+9C", drawn: "⇧⌘C", size: 15, colors: Self.light) == "⇧⌘C")
+        #expect(repaired("9Z", drawn: "⌘Z", size: 44, colors: Self.light) == "⌘Z")
+    }
+
+    @Test func wordWithoutSuspectsIsNotTouched() {
         // "Help" has no suspect characters, so even an image of four ⌘ must not change it.
-        XCTAssertEqual(SymbolRepair.repair("Help", in: SymbolRepair.render("⌘⌘⌘⌘", size: 28, foreground: 1, background: 0)), "Help")
+        #expect(repaired("Help", drawn: "⌘⌘⌘⌘", colors: (1, 0)) == "Help")
     }
 
-    func testSliverOfNeighbouringWordAtTheEdgeIsIgnored() {
+    @Test func sliverOfNeighbouringWordAtTheEdgeIsIgnored() throws {
         // Real crops often catch a pixel or two of the next word ("⇧⌘C, then" cut just after the "t" starts).
-        let full = SymbolRepair.render("⇧⌘C, then", size: 28, foreground: dark.fg, background: dark.bg)
+        let full = SymbolRepair.render("⇧⌘C, then", size: 28, foreground: Self.dark.fg, background: Self.dark.bg)
         let runs = Ink(full).columnRuns()
-        let tStart = runs[4].lowerBound
-        let crop = full.cropping(to: CGRect(x: 0, y: 0, width: tStart + 2, height: full.height))!
-        XCTAssertEqual(SymbolRepair.repair("+9C,", in: crop), "⇧⌘C,")
+        try #require(runs.count > 4)
+        let crop = try #require(full.cropping(to: CGRect(x: 0, y: 0, width: runs[4].lowerBound + 2, height: full.height)))
+        #expect(SymbolRepair.check("+9C,", in: crop).text == "⇧⌘C,")
     }
 
-    func testDroppedSpaceBetweenSymbolsIsRestored() {
+    @Test func droppedSpaceBetweenSymbolsIsRestored() {
         // Vision read "⌥ ⌃" as one word "T^"; the gap in the image is a space, so put it back.
-        XCTAssertEqual(repaired("T^", drawn: "⌥ ⌃", size: 30), "⌥ ⌃")
+        #expect(repaired("T^", drawn: "⌥ ⌃", size: 30) == "⌥ ⌃")
         // Shortcut combos are drawn tight and must stay together.
-        XCTAssertEqual(repaired("+9C", drawn: "⇧⌘C", size: 30), "⇧⌘C")
+        #expect(repaired("+9C", drawn: "⇧⌘C", size: 30) == "⇧⌘C")
     }
 
-    func testShortcutWhosePiecesDoNotLineUpIsFlaggedForReview() {
+    // MARK: Review flag
+
+    @Test func shortcutWhosePiecesDoNotLineUpIsFlaggedForReview() {
         // A line drawn through the word (or any extra mark) breaks the one-piece-per-character mapping.
-        let image = SymbolRepair.render("⇧⌘C | ", size: 30, foreground: dark.fg, background: dark.bg)
-        let result = SymbolRepair.check("+9C", in: image)
-        XCTAssertEqual(result.text, "+9C")
-        XCTAssertTrue(result.uncertain)
+        #expect(check("+9C", drawn: "⇧⌘C | ", size: 30) == SymbolRepair.Check(text: "+9C", isUncertain: true))
     }
 
-    func testOrdinaryWordsWithMismatchedPiecesAreNotFlagged() {
-        // Kerned or joined letters can also break the mapping; normal words must not trigger the review panel.
-        XCTAssertFalse(SymbolRepair.check("Total", in: SymbolRepair.render("Tota", size: 30, foreground: dark.fg, background: dark.bg)).uncertain)
-        XCTAssertFalse(SymbolRepair.check("2026", in: SymbolRepair.render("20 26", size: 30, foreground: dark.fg, background: dark.bg)).uncertain)
-        // "#" and "4" touch, so 3 characters give 2 pieces; neither piece looks like a symbol.
-        XCTAssertFalse(SymbolRepair.check("#42", in: SymbolRepair.render("#42", size: 30, foreground: dark.fg, background: dark.bg)).uncertain)
-        // Underscores join letters into bigger pieces; letters must not be taken for symbols.
-        let key = "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE"
-        XCTAssertFalse(SymbolRepair.check(key, in: SymbolRepair.render(key, size: 30, foreground: dark.fg, background: dark.bg)).uncertain)
+    @Test(arguments: [
+        ("Total", "Tota"),                                   // kerned letters can join
+        ("2026", "20 26"),
+        ("#42", "#42"),                                      // "#" and "4" touch: 3 characters, 2 pieces
+        ("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE", "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE"),   // underscores join letters
+    ])
+    func ordinaryWordsWithMismatchedPiecesAreNotFlagged(read: String, drawn: String) {
+        #expect(!check(read, drawn: drawn, size: 30).isUncertain)
     }
 
-    func testCodeInMonospacedFontIsNotFlagged() {
+    @Test func codeInMonospacedFontIsNotFlagged() {
         // Inline code (a commit hash) in the monospaced system font, as in a chat app.
-        let image = SymbolRepair.render("a21e64e", size: 26, foreground: dark.fg, background: 0.2, font: .userFixedPitch)
-        XCTAssertEqual(SymbolRepair.check("a21e64e", in: image), SymbolRepair.Check(text: "a21e64e", uncertain: false))
+        let image = SymbolRepair.render("a21e64e", size: 26, foreground: Self.dark.fg, background: 0.2, font: .userFixedPitch)
+        #expect(SymbolRepair.check("a21e64e", in: image) == SymbolRepair.Check(text: "a21e64e", isUncertain: false))
     }
 
-    func testMismatchedPiecesLeaveWordAlone() {
-        // Image has 3 glyphs but the read text has 2 characters: no safe mapping, so no change.
-        XCTAssertEqual(repaired("9C", drawn: "⇧⌘C"), "9C")
+    @Test func mismatchedPiecesLeaveWordAlone() {
+        // The image has 3 glyphs but the read text has 2 characters: no safe mapping, so no change.
+        #expect(repaired("9C", drawn: "⇧⌘C") == "9C")
     }
 }

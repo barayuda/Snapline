@@ -11,11 +11,11 @@ public enum ReadingOrder {
     /// `pieces` use Vision boxes: normalized, origin bottom-left. Rows go top to bottom; pieces whose
     /// vertical centres are within half a line height share a row and are joined left to right.
     /// Lines that the screen wrapped in the middle of a sentence are joined back into one line.
-    public static func text(from pieces: [(String, CGRect)]) -> String {
-        var groups: [[(String, CGRect)]] = []
-        for piece in pieces.map({ (tidy($0.0), $0.1) }).sorted(by: { $0.1.midY > $1.1.midY }) {
+    public static func text(from pieces: [(text: String, box: CGRect)]) -> String {
+        var groups: [[(text: String, box: CGRect)]] = []
+        for piece in pieces.map({ (text: tidy($0.text), box: $0.box) }).sorted(by: { $0.box.midY > $1.box.midY }) {
             if let first = groups.last?.first,
-               abs(first.1.midY - piece.1.midY) < min(first.1.height, piece.1.height) / 2 {
+               abs(first.box.midY - piece.box.midY) < min(first.box.height, piece.box.height) / 2 {
                 groups[groups.count - 1].append(piece)
             } else {
                 groups.append([piece])
@@ -23,9 +23,9 @@ public enum ReadingOrder {
         }
 
         let rows = groups.map { group -> Row in
-            let sorted = group.sorted { $0.1.minX < $1.1.minX }
-            return Row(text: sorted.map(\.0).reduce("") { join($0, $1, separator: " ") },
-                       box: sorted.map(\.1).reduce(sorted[0].1) { $0.union($1) })
+            let sorted = group.sorted { $0.box.minX < $1.box.minX }
+            return Row(text: sorted.map(\.text).reduce("") { join($0, $1, separator: " ") },
+                       box: sorted.map(\.box).reduce(sorted[0].box) { $0.union($1) })
         }
 
         let widest = rows.map(\.box.width).max() ?? 0

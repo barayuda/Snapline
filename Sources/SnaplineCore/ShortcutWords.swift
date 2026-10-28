@@ -9,6 +9,7 @@ public enum ShortcutWords {
     static let arrows: [Character: String] = ["←": "Left", "→": "Right", "↑": "Up", "↓": "Down"]
     static let trailing: Set<Character> = [",", ".", ";", ":", "!", "?", ")", "]"]
 
+    /// `text` with keyboard-shortcut symbols written as words; arrows and other symbols in prose stay.
     public static func convert(_ text: String) -> String {
         var out = ""
         var token = ""

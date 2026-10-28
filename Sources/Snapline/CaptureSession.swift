@@ -1,4 +1,5 @@
 import AppKit
+import SnaplineCore
 
 enum SearchEngine: String, CaseIterable {
     case googleLens, tinEye
@@ -11,7 +12,7 @@ enum SearchEngine: String, CaseIterable {
     }
 
     func url(for image: URL) -> URL {
-        let encoded = image.absoluteString.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+        let encoded = PercentEncoding.unreserved(image.absoluteString)
         switch self {
         case .googleLens: return URL(string: "https://lens.google.com/uploadbyurl?url=\(encoded)")!
         case .tinEye: return URL(string: "https://tineye.com/search?url=\(encoded)")!

@@ -22,7 +22,7 @@ final class UploadModel {
     }
 
     var phase = Phase.uploading(0)
-    var hovering = false
+    var isHovering = false
     let png: Data
     let fileName: String
     let search: SearchEngine?
@@ -51,7 +51,7 @@ final class UploadModel {
                 StatusPopover.setIcon(.success, resetAfter: 4)
                 if let search { NSWorkspace.shared.open(search.url(for: result.directURL)) }
                 // The link is already on the clipboard; close unless the pointer is over the popover.
-                if StatusPopover.isShowingUpload { StatusPopover.closeLater(after: 4) { self.hovering } }
+                if StatusPopover.isShowingUpload { StatusPopover.closeLater(after: 4) { self.isHovering } }
             } catch {
                 phase = .failed(error.localizedDescription)
                 StatusPopover.setIcon(.failure, resetAfter: 6)
@@ -71,7 +71,7 @@ final class UploadModel {
 }
 
 struct UploadView: View {
-    @Bindable var model: UploadModel
+    let model: UploadModel   // @Observable: reading it is enough, no bindings needed
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -104,6 +104,6 @@ struct UploadView: View {
         }
         .padding(14)
         .frame(width: 340, alignment: .leading)
-        .onHover { model.hovering = $0 }
+        .onHover { model.isHovering = $0 }
     }
 }

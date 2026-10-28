@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SnaplineCore
 
 /// Full-screen view on top of the frozen screen image of one display:
@@ -12,7 +13,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     private(set) var selection: CGRect?
     private var annotations: [Annotation] = []
     private var hideBoxes: [HideBox] = []
-    private var scanning = true
+    private var isScanning = true
     private var scan: Task<Void, Never>?
 
     private enum Undo { case annotation, toggle(Int) }
@@ -51,7 +52,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         let viewSize = bounds.size
         scan = Task {
             hideBoxes = await Redaction.scan(shot.image, viewSize: viewSize, categories: Settings.autoHideCategories)
-            scanning = false
+            isScanning = false
             needsDisplay = true
         }
     }
@@ -242,7 +243,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         var label = "\(Int((sel.width * outputScale).rounded())) × \(Int((sel.height * outputScale).rounded()))"
         if session.autoHideActive && !Settings.autoHideCategories.isEmpty {
             let hidden = visibleHideBoxes.filter { $0.1.hidden }.count
-            label += scanning ? "   ·   scanning…" : hidden > 0 ? "   ·   hiding \(hidden)" : ""
+            label += isScanning ? "   ·   scanning…" : hidden > 0 ? "   ·   hiding \(hidden)" : ""
         }
         badge(label, at: CGPoint(x: sel.minX, y: max(sel.minY - 26, 2)), centered: false, fill: Brand.violet)
     }
@@ -439,12 +440,12 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         let chars = e.charactersIgnoringModifiers?.lowercased() ?? ""
         let flags = e.modifierFlags
         switch Int(e.keyCode) {
-        case 53: session.cancel()                                  // Esc
-        case 123: nudge(dx: -1, dy: 0, flags)                       // ←
-        case 124: nudge(dx: 1, dy: 0, flags)                        // →
-        case 125: nudge(dx: 0, dy: 1, flags)                        // ↓
-        case 126: nudge(dx: 0, dy: -1, flags)                       // ↑
-        case 36, 76: session.perform(.copy)                         // Return copies, like Lightshot's Enter
+        case kVK_Escape: session.cancel()
+        case kVK_LeftArrow: nudge(dx: -1, dy: 0, flags)
+        case kVK_RightArrow: nudge(dx: 1, dy: 0, flags)
+        case kVK_DownArrow: nudge(dx: 0, dy: 1, flags)
+        case kVK_UpArrow: nudge(dx: 0, dy: -1, flags)
+        case kVK_Return, kVK_ANSI_KeypadEnter: session.perform(.copy)   // Return copies, like Lightshot's Enter
         default:
             if flags.contains(.command) {
                 switch chars {

@@ -1,20 +1,16 @@
-import XCTest
+import Testing
 @testable import SnaplineCore
 
-final class RecognitionLanguagesTests: XCTestCase {
+struct RecognitionLanguagesTests {
     private let supported = ["en-US", "fr-FR", "de-DE", "zh-Hans", "ja-JP", "id-ID", "ms-MY", "pt-BR"]
 
-    func testUsesTheMacsPreferredLanguagesMappedToSupportedOnes() {
-        // This Mac: English (Indonesia), Indonesian.
-        XCTAssertEqual(RecognitionLanguages.pick(preferred: ["en-ID", "id-ID"], supported: supported), ["en-US", "id-ID"])
-    }
-
-    func testEnglishIsAlwaysIncludedAsFallback() {
-        XCTAssertEqual(RecognitionLanguages.pick(preferred: ["ja-JP"], supported: supported), ["ja-JP", "en-US"])
-        XCTAssertEqual(RecognitionLanguages.pick(preferred: ["pt-PT"], supported: supported), ["pt-BR", "en-US"])
-    }
-
-    func testUnsupportedLanguagesAreSkippedAndDuplicatesRemoved() {
-        XCTAssertEqual(RecognitionLanguages.pick(preferred: ["xx-YY", "en-GB", "en-US"], supported: supported), ["en-US"])
+    @Test(arguments: [
+        (["en-ID", "id-ID"], ["en-US", "id-ID"]),        // this Mac: English (Indonesia), Indonesian
+        (["ja-JP"], ["ja-JP", "en-US"]),                 // English is always added as a fallback
+        (["pt-PT"], ["pt-BR", "en-US"]),                 // same language, other region
+        (["xx-YY", "en-GB", "en-US"], ["en-US"]),        // unsupported skipped, duplicates removed
+    ])
+    func picksSupportedLanguages(preferred: [String], expected: [String]) {
+        #expect(RecognitionLanguages.pick(preferred: preferred, supported: supported) == expected)
     }
 }

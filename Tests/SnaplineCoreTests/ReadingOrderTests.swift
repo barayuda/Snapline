@@ -1,22 +1,23 @@
-import XCTest
+import CoreGraphics
+import Testing
 @testable import SnaplineCore
 
-final class ReadingOrderTests: XCTestCase {
+struct ReadingOrderTests {
     // Boxes are Vision-style: normalized, origin bottom-left (higher y = higher on screen).
     private func box(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat = 0.2, _ h: CGFloat = 0.04) -> CGRect {
         CGRect(x: x, y: y, width: w, height: h)
     }
 
-    func testLinesGoTopToBottom() {
+    @Test func linesGoTopToBottom() {
         let text = ReadingOrder.text(from: [
             ("second line", box(0.1, 0.50)),
             ("first line", box(0.1, 0.80)),
             ("third line", box(0.1, 0.20)),
         ])
-        XCTAssertEqual(text, "first line\nsecond line\nthird line")
+        #expect(text == "first line\nsecond line\nthird line")
     }
 
-    func testPiecesOnTheSameRowJoinLeftToRight() {
+    @Test func piecesOnTheSameRowJoinLeftToRight() {
         // Slightly different baselines still count as one row.
         let text = ReadingOrder.text(from: [
             ("Total", box(0.1, 0.600)),
@@ -24,28 +25,27 @@ final class ReadingOrderTests: XCTestCase {
             ("Guest", box(0.1, 0.700)),
             ("Jane Doe", box(0.6, 0.698)),
         ])
-        XCTAssertEqual(text, "Guest Jane Doe\nTotal IDR 1.250.000")
+        #expect(text == "Guest Jane Doe\nTotal IDR 1.250.000")
     }
 
-    func testNoSpaceBeforePunctuationAfterACodeSpan() {
+    @Test func noSpaceBeforePunctuationAfterACodeSpan() {
         // Vision often splits inline code from the following text: "a21e64e" + ". The commit".
         let text = ReadingOrder.text(from: [
             ("pushed as", box(0.05, 0.5, 0.2)),
             ("a21e64e", box(0.27, 0.5, 0.1)),
             (". The commit", box(0.38, 0.5, 0.2)),
         ])
-        XCTAssertEqual(text, "pushed as a21e64e. The commit")
+        #expect(text == "pushed as a21e64e. The commit")
     }
 
-    func testNoSpaceBeforePunctuationInsideOnePiece() {
+    @Test func noSpaceBeforePunctuationInsideOnePiece() {
         // Real Vision output for a line with an inline code span.
-        XCTAssertEqual(ReadingOrder.text(from: [("pushed to GitHub as a21e64e . The commit is", box(0.05, 0.5, 0.8))]),
-                       "pushed to GitHub as a21e64e. The commit is")
-        XCTAssertEqual(ReadingOrder.text(from: [("1 + 2 = 3 and 50 % off", box(0.05, 0.5, 0.8))]),
-                       "1 + 2 = 3 and 50 % off")
+        #expect(ReadingOrder.text(from: [("pushed to GitHub as a21e64e . The commit is", box(0.05, 0.5, 0.8))])
+            == "pushed to GitHub as a21e64e. The commit is")
+        #expect(ReadingOrder.text(from: [("1 + 2 = 3 and 50 % off", box(0.05, 0.5, 0.8))]) == "1 + 2 = 3 and 50 % off")
     }
 
-    func testWrappedLinesJoinIntoOneParagraph() {
+    @Test func wrappedLinesJoinIntoOneParagraph() {
         // Two full-width lines that continue in lowercase, then a short last line, then a new paragraph.
         let text = ReadingOrder.text(from: [
             ("The commit is signed with your key and has no", box(0.05, 0.80, 0.85)),
@@ -53,31 +53,31 @@ final class ReadingOrderTests: XCTestCase {
             ("in sync.", box(0.05, 0.70, 0.15)),
             ("Copy Text has not been tried yet.", box(0.05, 0.55, 0.6)),
         ])
-        XCTAssertEqual(text, """
+        #expect(text == """
             The commit is signed with your key and has no co-author line. Your local main and origin are in sync.
             Copy Text has not been tried yet.
             """)
     }
 
-    func testWrappedLineStartingWithKeyboardSymbolJoins() {
+    @Test func wrappedLineStartingWithKeyboardSymbolJoins() {
         let text = ReadingOrder.text(from: [
             ("To test it, select an area with text and press", box(0.05, 0.80, 0.85)),
             ("⇧⌘C, then paste.", box(0.05, 0.75, 0.25)),
         ])
-        XCTAssertEqual(text, "To test it, select an area with text and press ⇧⌘C, then paste.")
+        #expect(text == "To test it, select an area with text and press ⇧⌘C, then paste.")
     }
 
-    func testListLinesStaySeparate() {
+    @Test func listLinesStaySeparate() {
         // Close together and left-aligned, but each item starts with a capital: a list, not a wrapped sentence.
         let text = ReadingOrder.text(from: [
             ("Save As: ⌥⌘S", box(0.05, 0.80, 0.3)),
             ("Undo: ⌘Z", box(0.05, 0.75, 0.3)),
             ("Hide: ⌃⌥H", box(0.05, 0.70, 0.3)),
         ])
-        XCTAssertEqual(text, "Save As: ⌥⌘S\nUndo: ⌘Z\nHide: ⌃⌥H")
+        #expect(text == "Save As: ⌥⌘S\nUndo: ⌘Z\nHide: ⌃⌥H")
     }
 
-    func testEmptyInput() {
-        XCTAssertEqual(ReadingOrder.text(from: []), "")
+    @Test func emptyInput() {
+        #expect(ReadingOrder.text(from: []) == "")
     }
 }

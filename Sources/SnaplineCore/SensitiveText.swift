@@ -1,5 +1,6 @@
 import Foundation
 
+/// Kinds of data auto-hide can cover; each can be turned off in Preferences.
 public enum SensitiveCategory: String, CaseIterable, Sendable {
     case contact, payment, secret, face
 
@@ -13,6 +14,7 @@ public enum SensitiveCategory: String, CaseIterable, Sendable {
     }
 }
 
+/// A sensitive value: its range in the text and what kind it is.
 public struct SensitiveMatch: Sendable, Equatable {
     public let range: Range<String.Index>
     public let category: SensitiveCategory
@@ -20,7 +22,7 @@ public struct SensitiveMatch: Sendable, Equatable {
 
 /// Finds sensitive values in one line of recognised text.
 public enum SensitiveText {
-    private struct Rule: @unchecked Sendable {
+    private struct Rule: Sendable {   // NSRegularExpression is Sendable
         let regex: NSRegularExpression
         let category: SensitiveCategory
         let group: Int
@@ -60,6 +62,7 @@ public enum SensitiveText {
 
     private static let phoneDetector = try! NSDataDetector(types: NSTextCheckingResult.CheckingType.phoneNumber.rawValue)
 
+    /// Sensitive values found in one line of text, limited to `categories`, sorted and with overlaps merged.
     public static func matches(in text: String, categories: Set<SensitiveCategory>) -> [SensitiveMatch] {
         let ns = text as NSString
         let all = NSRange(location: 0, length: ns.length)

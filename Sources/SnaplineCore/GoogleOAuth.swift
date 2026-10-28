@@ -3,12 +3,15 @@ import Foundation
 
 /// PKCE (RFC 7636) for the OAuth "installed app" flow.
 public enum PKCE {
+    /// A new random code verifier (43 URL-safe characters from 32 secure random bytes).
     public static func makeVerifier() -> String {
         var bytes = [UInt8](repeating: 0, count: 32)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        // A failed random source would give a predictable verifier; never sign in with that.
+        precondition(SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess, "No secure random bytes")
         return Data(bytes).base64URLEncodedString()
     }
 
+    /// The S256 challenge for `verifier`: base64url(SHA-256(verifier)).
     public static func challenge(for verifier: String) -> String {
         Data(SHA256.hash(data: Data(verifier.utf8))).base64URLEncodedString()
     }
@@ -17,7 +20,7 @@ public enum PKCE {
 /// Pure parts of Google sign-in: URLs, callback parsing, token decoding.
 /// The network and the loopback listener live in the app target.
 public enum GoogleOAuth {
-    public static let scope = "openid email https://www.googleapis.com/auth/drive.file"
+    static let scope = "openid email https://www.googleapis.com/auth/drive.file"
     public static let tokenURL = URL(string: "https://oauth2.googleapis.com/token")!
     public static let revokeURL = URL(string: "https://oauth2.googleapis.com/revoke")!
 
@@ -38,6 +41,7 @@ public enum GoogleOAuth {
         }
     }
 
+    /// Google's consent page URL for the installed-app flow, asking for a refresh token (offline access).
     public static func authorizationURL(clientID: String, redirectURI: String, challenge: String, state: String) -> URL {
         var c = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
         c.queryItems = [
@@ -81,11 +85,17 @@ public enum GoogleOAuth {
             + "<body style='font:16px -apple-system;padding:40px'>\(escaped)"
     }
 
-    /// Form body for the token endpoint.
+    /// True when the token endpoint's error body says the refresh token is expired or revoked
+    /// (`{"error":"invalid_grant"}`), so the user has to sign in again.
+    public static func isInvalidGrant(_ body: Data) -> Bool {
+        struct ErrorBody: Decodable { let error: String }
+        return (try? JSONDecoder().decode(ErrorBody.self, from: body))?.error == "invalid_grant"
+    }
+
+    /// Form body for the token endpoint: sorted `key=value` pairs, values percent-encoded.
     public static func formBody(_ fields: [String: String]) -> Data {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
         let pairs = fields.sorted { $0.key < $1.key }.map {
-            "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: allowed) ?? $0.value)"
+            "\($0.key)=\(PercentEncoding.unreserved($0.value))"
         }
         return Data(pairs.joined(separator: "&").utf8)
     }
@@ -101,14 +111,14 @@ public enum GoogleOAuth {
 }
 
 extension Data {
-    public func base64URLEncodedString() -> String {
+    func base64URLEncodedString() -> String {
         base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
     }
 
-    public init?(base64URLEncoded s: String) {
+    init?(base64URLEncoded s: String) {
         var b64 = s.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
         b64 += String(repeating: "=", count: (4 - b64.count % 4) % 4)
         self.init(base64Encoded: b64)

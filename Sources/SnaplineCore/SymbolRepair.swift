@@ -1,6 +1,7 @@
 import CoreGraphics
 import CoreText
 import Foundation
+import Synchronization
 
 /// Apple's text recognition has no keyboard symbols in its alphabet, so "⇧⌘C" comes back as "+9C".
 /// For words with such suspect characters, this cuts the word image into one piece per glyph and
@@ -23,6 +24,10 @@ public enum SymbolRepair {
     /// A symbol must score at least this, and beat the read character by `margin`.
     static let minimumScore: Float = 0.45
     static let margin: Float = 0.10
+    /// A glyph nothing was read for (skipped by text recognition) counts as a symbol only with this score,
+    /// and this lead over the next-best symbol; otherwise it is reported as unknown.
+    static let droppedMinimumScore: Float = 0.6
+    static let droppedMargin: Float = 0.08
     /// A symbol that beats the read character but not clearly, scoring at least this, asks for review.
     static let reviewScore: Float = 0.35
     /// Symbols drawn as two separate shapes (a bar and an arrow), so they split into two pieces.
@@ -31,7 +36,7 @@ public enum SymbolRepair {
     public struct Check: Equatable, Sendable {
         public let text: String
         /// The word may contain a symbol that could not be checked; ask the user to review it.
-        public let uncertain: Bool
+        public let isUncertain: Bool
     }
 
     /// The symbols Snapline knows, for the review panel's palette.
@@ -40,11 +45,13 @@ public enum SymbolRepair {
     public static func hasSuspects(_ word: Substring) -> Bool { word.contains(where: suspects.contains) }
 
     /// `crop` shows exactly this word (any colours, light or dark background).
-    public static func repair(_ word: String, in crop: CGImage) -> String { check(word, in: crop).text }
+    static func repair(_ word: String, in crop: CGImage) -> String { check(word, in: crop).text }
 
+    /// Repairs keyboard symbols misread in `word`, using `crop` (an image of exactly this word, any colours).
+    /// `isUncertain` is set when the image clearly shows a symbol that could not be repaired safely.
     public static func check(_ word: String, in crop: CGImage) -> Check {
         let chars = Array(word)
-        guard chars.contains(where: suspects.contains) else { return Check(text: word, uncertain: false) }
+        guard chars.contains(where: suspects.contains) else { return Check(text: word, isUncertain: false) }
         let ink = Ink(crop)
         var pieces = ink.columnRuns()
         // Thin slivers touching the crop edge belong to the neighbouring word.
@@ -71,14 +78,14 @@ public enum SymbolRepair {
             let symbolScore = bestScore(shape, symbol)
             return ownCharacters.allSatisfy { bestScore(shape, $0) < symbolScore - margin }
         }
-        return Check(text: word, uncertain: showsSymbol)
+        return Check(text: word, isUncertain: showsSymbol)
     }
 
     private static func classify(_ chars: [Character], _ pieces: [Range<Int>], _ ink: Ink)
         -> (check: Check, symbols: [Int: Character]) {
         var out = chars.map(String.init)
         var symbols: [Int: Character] = [:]
-        var uncertain = false
+        var isUncertain = false
         for (i, ch) in chars.enumerated() where suspects.contains(ch) {
             guard let glyph = ink.shape(columns: pieces[i]) else { continue }
             let readScore = bestScore(glyph, ch)
@@ -89,7 +96,7 @@ public enum SymbolRepair {
                 out[i] = String(symbol)
                 symbols[i] = symbol
             } else if score > readScore, score >= reviewScore {
-                uncertain = true
+                isUncertain = true
             }
         }
         // Text recognition sometimes drops the space between two symbols ("⌥ ⌃" read as "T^").
@@ -103,7 +110,7 @@ public enum SymbolRepair {
             }
             text += out[i]
         }
-        return (Check(text: text, uncertain: uncertain), symbols)
+        return (Check(text: text, isUncertain: isUncertain), symbols)
     }
 
     /// A glyph between two recognised words that no word covers: text recognition skipped it.
@@ -149,7 +156,7 @@ public enum SymbolRepair {
     private static func clearSymbol(_ ink: Ink, _ columns: Range<Int>) -> Character? {
         guard let shape = ink.shape(columns: columns) else { return nil }
         let ranked = symbols.map { ($0, bestScore(shape, $0)) }.sorted { $0.1 > $1.1 }
-        guard ranked[0].1 >= 0.6, ranked[0].1 - ranked[1].1 >= 0.08 else { return nil }
+        guard ranked[0].1 >= droppedMinimumScore, ranked[0].1 - ranked[1].1 >= droppedMargin else { return nil }
         return ranked[0].0
     }
 
@@ -179,13 +186,11 @@ public enum SymbolRepair {
         templates(ch).map { similarity(shape, $0) }.max() ?? 0
     }
 
-    private nonisolated(unsafe) static var cache: [Character: [Shape]] = [:]
-    private static let lock = NSLock()
+    /// Rendered templates per character. Rendering happens outside the lock; a duplicate render in a race is harmless.
+    private static let cache = Mutex<[Character: [Shape]]>([:])
 
     static func templates(_ ch: Character) -> [Shape] {
-        lock.lock()
-        defer { lock.unlock() }
-        if let cached = cache[ch] { return cached }
+        if let cached = cache.withLock({ $0[ch] }) { return cached }
         // Monospaced letters and digits for code text ("1" has a flag and a foot there). Not for punctuation:
         // a monospaced "^" is drawn as large as ⌃ and would hide it.
         let fonts: [CTFontUIFontType] = ch.isLetter || ch.isNumber ? [.system, .emphasizedSystem, .userFixedPitch]
@@ -194,7 +199,7 @@ public enum SymbolRepair {
             let ink = Ink(render(String(ch), size: 64, foreground: 1, background: 0, font: type))
             return ink.shape(columns: 0..<ink.width)
         }
-        cache[ch] = shapes
+        cache.withLock { $0[ch] = shapes }
         return shapes
     }
 

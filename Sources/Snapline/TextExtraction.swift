@@ -7,21 +7,20 @@ import Vision
 enum TextExtraction {
     /// Text in reading order, or "" when the image has no readable text. Spots the user should check
     /// are wrapped in `UncertainMarks`; strip them (or show the review panel) before copying.
+    @concurrent
     static func text(in image: CGImage) async -> String {
-        await Task.detached(priority: .userInitiated) {
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = false  // keeps codes, IDs and numbers exact (correction turned "7" into "Z")
-            // The Mac's own languages; automatic detection read symbol-heavy lines as Chinese.
-            request.recognitionLanguages = RecognitionLanguages.pick(
-                preferred: Locale.preferredLanguages,
-                supported: (try? request.supportedRecognitionLanguages()) ?? ["en-US"])
-            try? VNImageRequestHandler(cgImage: image).perform([request])
-            let pieces = (request.results ?? []).compactMap { o in
-                o.topCandidates(1).first.map { (line($0, box: o.boundingBox, in: image), o.boundingBox) }
-            }
-            return ReadingOrder.text(from: pieces)
-        }.value
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false  // keeps codes, IDs and numbers exact (correction turned "7" into "Z")
+        // The Mac's own languages; automatic detection read symbol-heavy lines as Chinese.
+        request.recognitionLanguages = RecognitionLanguages.pick(
+            preferred: Locale.preferredLanguages,
+            supported: (try? request.supportedRecognitionLanguages()) ?? ["en-US"])
+        try? VNImageRequestHandler(cgImage: image).perform([request])
+        let pieces = (request.results ?? []).compactMap { o in
+            o.topCandidates(1).first.map { (line($0, box: o.boundingBox, in: image), o.boundingBox) }
+        }
+        return ReadingOrder.text(from: pieces)
     }
 
     /// One recognised line: repair misread keyboard symbols in each word, and put back glyphs
@@ -46,7 +45,7 @@ enum TextExtraction {
                 continue
             }
             let result = SymbolRepair.check(word, in: crop)
-            words.append(result.uncertain ? UncertainMarks.wrap(result.text) : result.text)
+            words.append(result.isUncertain ? UncertainMarks.wrap(result.text) : result.text)
         }
 
         // Only look for skipped glyphs when every word has a box; a missing box would look like a gap.

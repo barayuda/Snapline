@@ -80,7 +80,7 @@ final class GoogleAuth {
             accessToken = token.accessToken
             expiry = Date().addingTimeInterval(TimeInterval(token.expiresIn - 60))
             return token.accessToken
-        } catch let error as UploadError where error.message.contains("invalid_grant") {
+        } catch let error as HTTPError where error.status == 400 && GoogleOAuth.isInvalidGrant(error.body) {
             // Revoked or expired (for example an app left in "Testing" mode for 7 days).
             Keychain.set(.googleRefreshToken, nil)
             UserDefaults.standard.removeObject(forKey: Key.googleEmail)
@@ -93,7 +93,7 @@ final class GoogleAuth {
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         let (data, http) = try await send(request, body: GoogleOAuth.formBody(fields))
-        try checkStatus(data, http, "Google token request")
+        try checkStatus(http, body: data, action: "Google token request")
         return try JSONDecoder().decode(GoogleOAuth.TokenResponse.self, from: data)
     }
 }

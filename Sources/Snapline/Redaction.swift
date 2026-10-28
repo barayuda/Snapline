@@ -5,40 +5,40 @@ import Vision
 /// On-device scan for sensitive text and faces. Nothing leaves the Mac.
 enum Redaction {
     /// Returns boxes in view points (top-left origin) for a screen of `viewSize` points.
+    /// `@concurrent`: Vision work runs off the main actor, while keeping cancellation and priority (unlike `Task.detached`).
+    @concurrent
     static func scan(_ image: CGImage, viewSize: CGSize, categories: Set<SensitiveCategory>) async -> [HideBox] {
         guard !categories.isEmpty else { return [] }
-        return await Task.detached(priority: .userInitiated) {
-            var boxes: [HideBox] = []
-            let handler = VNImageRequestHandler(cgImage: image)
+        var boxes: [HideBox] = []
+        let handler = VNImageRequestHandler(cgImage: image)
 
-            let text = VNRecognizeTextRequest()
-            text.recognitionLevel = .accurate
-            text.usesLanguageCorrection = false  // keep tokens and codes as they are
-            text.recognitionLanguages = RecognitionLanguages.pick(
-                preferred: Locale.preferredLanguages,
-                supported: (try? text.supportedRecognitionLanguages()) ?? ["en-US"])
-            let faces = VNDetectFaceRectanglesRequest()
+        let text = VNRecognizeTextRequest()
+        text.recognitionLevel = .accurate
+        text.usesLanguageCorrection = false  // keep tokens and codes as they are
+        text.recognitionLanguages = RecognitionLanguages.pick(
+            preferred: Locale.preferredLanguages,
+            supported: (try? text.supportedRecognitionLanguages()) ?? ["en-US"])
+        let faces = VNDetectFaceRectanglesRequest()
 
-            var requests: [VNRequest] = []
-            if !categories.subtracting([.face]).isEmpty { requests.append(text) }
-            if categories.contains(.face) { requests.append(faces) }
-            try? handler.perform(requests)
+        var requests: [VNRequest] = []
+        if !categories.subtracting([.face]).isEmpty { requests.append(text) }
+        if categories.contains(.face) { requests.append(faces) }
+        try? handler.perform(requests)
 
-            for observation in text.results ?? [] {
-                guard let candidate = observation.topCandidates(1).first else { continue }
-                for match in SensitiveText.matches(in: candidate.string, categories: categories) {
-                    guard let box = matchBox(match.range, in: candidate) else { continue }
-                    let r = SelectionGeometry.viewRect(fromNormalized: box, viewSize: viewSize).insetBy(dx: -3, dy: -2)
-                    boxes.append(HideBox(rect: r, category: match.category))
-                }
+        for observation in text.results ?? [] {
+            guard let candidate = observation.topCandidates(1).first else { continue }
+            for match in SensitiveText.matches(in: candidate.string, categories: categories) {
+                guard let box = matchBox(match.range, in: candidate) else { continue }
+                let r = SelectionGeometry.viewRect(fromNormalized: box, viewSize: viewSize).insetBy(dx: -3, dy: -2)
+                boxes.append(HideBox(rect: r, category: match.category))
             }
-            for face in faces.results ?? [] {
-                // Vision's face box is tight around the features; grow it to cover hair and chin.
-                let r = SelectionGeometry.viewRect(fromNormalized: face.boundingBox, viewSize: viewSize)
-                boxes.append(HideBox(rect: r.insetBy(dx: -r.width * 0.2, dy: -r.height * 0.3), category: .face))
-            }
-            return boxes
-        }.value
+        }
+        for face in faces.results ?? [] {
+            // Vision's face box is tight around the features; grow it to cover hair and chin.
+            let r = SelectionGeometry.viewRect(fromNormalized: face.boundingBox, viewSize: viewSize)
+            boxes.append(HideBox(rect: r.insetBy(dx: -r.width * 0.2, dy: -r.height * 0.3), category: .face))
+        }
+        return boxes
     }
 
     /// Vision returns the box of the whole word for part of a word (for example the value in

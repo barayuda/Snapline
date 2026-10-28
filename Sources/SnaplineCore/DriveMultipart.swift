@@ -1,12 +1,23 @@
 import Foundation
 
+/// The metadata part of a Drive upload.
+public struct DriveFileMetadata: Encodable, Sendable {
+    public let name: String
+    public let parents: [String]
+
+    public init(name: String, parents: [String]) {
+        self.name = name
+        self.parents = parents
+    }
+}
+
 /// Request body helpers for the Google Drive v3 API.
 public enum DriveMultipart {
     /// `multipart/related` body for `uploadType=multipart`: JSON metadata, then the file.
-    public static func body(boundary: String, metadata: [String: Any], fileData: Data, mimeType: String) -> Data {
+    public static func body(boundary: String, metadata: DriveFileMetadata, fileData: Data, mimeType: String) throws -> Data {
         var body = Data()
         body.append(Data("--\(boundary)\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n".utf8))
-        body.append((try? JSONSerialization.data(withJSONObject: metadata)) ?? Data("{}".utf8))
+        body.append(try JSONEncoder().encode(metadata))
         body.append(Data("\r\n--\(boundary)\r\nContent-Type: \(mimeType)\r\n\r\n".utf8))
         body.append(fileData)
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))
