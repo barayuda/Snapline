@@ -183,7 +183,7 @@ off), so pushes to `main` never deploy. To publish the current `main`:
 git push origin main:website
 ```
 
-Never commit to `website` directly. `netlify.toml` also skips the build when nothing under `site/` changed.
+Never commit to `website` directly. Every push to it deploys.
 
 To preview locally: `python3 -m http.server 8642 --directory site`, then open <http://localhost:8642>.
 
