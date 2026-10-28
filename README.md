@@ -6,7 +6,7 @@ A native Apple Silicon screenshot tool for the macOS menu bar, modelled on Light
 
 - Swift 6.4, AppKit, ScreenCaptureKit, Vision. No third-party dependencies.
 - arm64 only, macOS 15 or newer.
-- Design notes: `../lightshot-rea/SNAPLINE-SPEC.md`. Reverse-engineering notes on the original: `../lightshot-rea/FINDINGS.md`.
+- Written from scratch: Snapline shares no code or artwork with Lightshot.
 
 ## Build and run
 
