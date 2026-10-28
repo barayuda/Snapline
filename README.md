@@ -23,14 +23,17 @@ Snapline is private by design. It has no servers, no accounts of its own, no ana
 - **Secrets stay in the macOS Keychain**: bucket keys and the Google sign-in token. Google sign-in runs in your browser;
   Snapline only receives the result on a local address (127.0.0.1).
 
-You can check this in the code: all network calls are in `Sources/Snapline/Uploaders.swift` and `GoogleAuth.swift`.
+You can check this in the code: all network calls are in `macOS/Sources/Snapline/Uploaders.swift` and `GoogleAuth.swift`.
 
 ## Build and run
 
+The macOS app is the Swift package in `macOS/`. Run these from there:
+
 ```bash
+cd macOS
 swift test                     # unit tests (signing, OAuth, matchers, geometry)
 scripts/make-app.sh            # builds build/Snapline.app (arm64, ad-hoc signed)
-scripts/make-app.sh --install  # same, then copies it to ~/Applications
+scripts/make-app.sh --install  # same, then replaces /Applications/Snapline.app and starts it
 open build/Snapline.app
 ```
 
@@ -41,14 +44,14 @@ see below.
 
 ### Keep permissions across rebuilds
 
-`scripts/make-app.sh` signs with a stable certificate when it finds one, in this order: the `SNAPLINE_SIGN_IDENTITY`
+`macOS/scripts/make-app.sh` signs with a stable certificate when it finds one, in this order: the `SNAPLINE_SIGN_IDENTITY`
 environment variable, an **Apple Development** certificate, a **Snapline Local Signing** certificate, otherwise ad hoc.
 It prints which one it used. Create one of these once:
 
 **Option A: free Apple Development certificate (recommended, needs an Apple Account)**
 1. Open **Xcode → Settings → Accounts**, click **+**, and sign in with your Apple Account (a free account is enough).
 2. Select the account, click **Manage Certificates…**, then **+** → **Apple Development**.
-3. Run `scripts/make-app.sh --install`. It should print `Signed with: Apple Development: …`.
+3. Run `macOS/scripts/make-app.sh --install`. It should print `Signed with: Apple Development: …`.
 
    If it prints `unable to build chain to self-signed root`, your Keychain is missing Apple's intermediate certificate:
    download **Worldwide Developer Relations - G3** from <https://www.apple.com/certificateauthority/> and double-click
@@ -61,7 +64,7 @@ It prints which one it used. Create one of these once:
 2. Name: `Snapline Local Signing`, Identity Type: **Self Signed Root**, Certificate Type: **Code Signing** → Create.
 3. In the **login** keychain, double-click the new certificate → **Trust** → **Code Signing: Always Trust**, close
    the window and confirm with your password.
-4. Run `scripts/make-app.sh --install`. It should print `Signed with: Snapline Local Signing`.
+4. Run `macOS/scripts/make-app.sh --install`. It should print `Signed with: Snapline Local Signing`.
 
 After switching, macOS asks for Screen Recording **one last time** (the signature changed). Remove old "Snapline"
 entries from the list with **−**, allow the new one, and from then on rebuilds keep the permission.
@@ -105,7 +108,7 @@ keyboard symbols as words** (⇧⌘C becomes Shift+Cmd+C). Text is read in the l
 with English as a fallback.
 
 To check what auto-hide would cover, or what Copy Text would copy (spots for review shown as ⟦…⟧), in an image without capturing
-the screen:
+the screen (from `macOS/`, after `swift build`):
 
 ```bash
 .build/debug/Snapline --scan some-image.png
@@ -133,7 +136,7 @@ The endpoint must use HTTPS, because your keys are sent with every upload. The o
 (`http://localhost:…`, `127.0.0.1`, `::1`), such as a local MinIO or floci for testing. A server elsewhere on your local
 network (a NAS, an `*.orb.local` container name) needs HTTPS, and macOS asks once for **Local Network** permission.
 
-To test uploads against a local S3-compatible server (it creates and deletes its own bucket):
+To test uploads against a local S3-compatible server (it creates and deletes its own bucket), from `macOS/`:
 
 ```bash
 SNAPLINE_S3_TEST_ENDPOINT=http://localhost:4566 swift test --filter S3IntegrationTests
@@ -158,15 +161,16 @@ Image search with Drive uploads uses an undocumented Drive direct-image link, wh
 ## Project layout
 
 ```
-Sources/SnaplineCore/   pure logic, unit tested: SigV4 signing, PKCE/OAuth helpers,
-                        Drive multipart body, file names, sensitive-text matchers, geometry
-Sources/Snapline/       the app: menu bar, hot key, capture, overlay, drawing, actions,
-                        uploaders, Google sign-in, auto-hide scan, Preferences
-Tests/SnaplineCoreTests/
-scripts/make-app.sh     bundle + ad-hoc sign
-scripts/brand/          icon and banner generator, brand fonts (OFL)
-Assets/                 AppIcon.icon (layered app icon), icon-1024.png, banner.png (generated)
-site/                   website: home, privacy policy, terms (static, deployed by Netlify)
+macOS/                        the macOS app (Swift package)
+  Sources/SnaplineCore/       pure logic, unit tested: SigV4 signing, PKCE/OAuth helpers,
+                              Drive multipart body, file names, sensitive-text matchers, geometry
+  Sources/Snapline/           the app: menu bar, hot key, capture, overlay, drawing, actions,
+                              uploaders, Google sign-in, auto-hide scan, Preferences
+  Tests/SnaplineCoreTests/
+  scripts/make-app.sh         bundle + sign
+scripts/brand/                icon and banner generator, brand fonts (OFL)
+Assets/                       AppIcon.icon (layered app icon), icon-1024.png, banner.png (generated)
+site/                         website: home, privacy policy, terms (static, deployed by Netlify)
 ```
 
 Brand colours, type and icon rules: [BRAND.md](BRAND.md).

@@ -1,5 +1,5 @@
-# The website lives in site/. Building from there keeps Netlify from seeing Package.swift
-# and trying to install Swift (it would fail, and nothing here needs building).
+# The website lives in site/. Building from there keeps Netlify away from the app projects
+# (it would see Package.swift and try to install Swift; nothing here needs building).
 [build]
   base = "site"
   publish = "/"   # relative to base, so this is site/ itself
