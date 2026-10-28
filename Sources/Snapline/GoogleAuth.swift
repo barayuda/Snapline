@@ -153,7 +153,7 @@ private final class LoopbackServer: @unchecked Sendable {
                 }
                 self.callback = c
                 self.queue.asyncAfter(deadline: .now() + 300) { [weak self] in
-                    self?.finish(.failure(UploadError(message: "Google sign-in timed out.")))
+                    self?.finish(.failure(UploadError(message: "Google sign-in timed out. Try again.")))
                 }
             }
         }

@@ -234,7 +234,8 @@ private struct UploadTab: View {
     @State private var clientSecret = ""
     @State private var signedIn = false
     @State private var busy = false
-    @State private var message: String?
+    /// Why the last Google sign-in failed, shown in the Account section (Drive only).
+    @State private var signInError: String?
     /// Result of the last Save, shown next to the Save button.
     @State private var saveStatus: (text: String, ok: Bool)?
 
@@ -296,15 +297,15 @@ private struct UploadTab: View {
                         }
                     }
                     if busy { ProgressView().controlSize(.small) }
+                    if let signInError { Text(signInError).font(.caption).foregroundStyle(.red) }
                 }
                 Text("Screenshots go to a “Snapline” folder in My Drive and are shared as “anyone with the link can view”. Snapline can only see files it created.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            if let message { Text(message).font(.caption).foregroundStyle(.red) }
         }
         .formStyle(.grouped)
         .onSubmit { target == "s3" ? saveS3() : saveGoogle() }   // Return in a field saves too
-        .onChange(of: target) { saveStatus = nil }
+        .onChange(of: target) { saveStatus = nil; signInError = nil }
         .onAppear(perform: load)
     }
 
@@ -314,9 +315,9 @@ private struct UploadTab: View {
 
     private func signIn() {
         busy = true
-        message = nil
+        signInError = nil
         Task {
-            do { try await GoogleAuth.shared.signIn() } catch { message = error.localizedDescription }
+            do { try await GoogleAuth.shared.signIn() } catch { signInError = error.localizedDescription }
             refresh()
             busy = false
             Preferences.show()
