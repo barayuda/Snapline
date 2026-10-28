@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Snapline privacy policy</title>
+  <meta name="description" content="How Snapline handles your screenshots, your Google account data and your keys.">
+  <link rel="canonical" href="https://snapline.barayuda.web.id/privacy/">
+  <link rel="icon" href="/assets/favicon-64.png" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <meta name="theme-color" content="#f6f5fb">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="/"><img src="/assets/icon-256.png" alt="" width="36" height="36">Snapline</a>
+      <nav class="site-nav" aria-label="Site">
+        <a href="/privacy/" aria-current="page">Privacy</a>
+        <a href="/terms/">Terms</a>
+        <a href="https://github.com/barayuda/Snapline">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="doc">
+    <div class="wrap">
+      <h1>Privacy policy</h1>
+      <p class="updated">Last updated 28 October 2026</p>
+
+      <div class="summary">
+        <p>Snapline is a screenshot app that runs on your Mac. It has no servers, no accounts of its own, no analytics and no tracking. Your screenshots are read only on your Mac. An image leaves your Mac only when you choose to upload, search or email it, and then it goes only to the place you chose.</p>
+      </div>
+
+      <p>This policy covers the Snapline app for macOS and this website. Snapline is made by Barayuda (“we”, “us”).</p>
+
+      <h2>What Snapline does on your Mac</h2>
+      <ul>
+        <li>Capturing the screen, drawing, auto-hide of sensitive data and Copy Text all run on your Mac, using Apple's built-in frameworks (ScreenCaptureKit and Vision).</li>
+        <li>No screenshot and no recognised text is sent to us or to anyone else to be read, analysed or stored.</li>
+        <li>Snapline does not collect usage data, crash reports or any other telemetry.</li>
+        <li>Your settings are stored on your Mac. Secrets (bucket keys and your Google sign-in) are stored in the macOS Keychain.</li>
+      </ul>
+
+      <h2>When an image leaves your Mac</h2>
+      <p>Only when you ask for it:</p>
+      <ul>
+        <li><strong>Upload</strong> sends the image to the destination you set up: your own S3-compatible bucket, or your own Google Drive. Anyone with the link can view it.</li>
+        <li><strong>Search similar images</strong> uploads the image there first, then opens Google Lens or TinEye in your browser with that link. Those services handle the image under their own privacy policies.</li>
+        <li><strong>Email</strong> hands the file to your mail app. Nothing is sent until you send the email.</li>
+      </ul>
+      <p>We never receive these images. The services you upload to (for example Google, Amazon Web Services or Cloudflare) handle them under their own terms and privacy policies.</p>
+
+      <h2>Google account data</h2>
+      <p>If you choose Google Drive as your upload destination and sign in with Google, Snapline asks for these permissions:</p>
+      <ul>
+        <li><strong>See, edit, create and delete only the specific Google Drive files you use with this app</strong> (<code>drive.file</code>). Snapline uses it to create a “Snapline” folder in your Drive, upload the screenshots you choose to upload, and set them to “anyone with the link can view” so the link works. Snapline cannot see any other files in your Drive.</li>
+        <li><strong>Your email address and basic sign-in</strong> (<code>openid</code>, <code>email</code>). Snapline uses it only to show which Google account is signed in, in Preferences.</li>
+      </ul>
+      <p>How this data is handled:</p>
+      <ul>
+        <li>Google sign-in happens in your own browser. Snapline never sees your Google password. It receives the sign-in result on a local address on your Mac (127.0.0.1).</li>
+        <li>The sign-in token is stored in the macOS Keychain, and your email address in Snapline's settings, both only on your Mac. They are sent only to Google, to upload files and to sign out.</li>
+        <li>We do not receive, store, sell or share your Google data. It is not used for advertising, it is not read by people, and it is not used to train AI or machine learning models.</li>
+      </ul>
+      <p>Snapline's use and transfer of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+      <p>To remove access, click <strong>Sign out</strong> in Snapline's Preferences, which also revokes Snapline's access at Google. You can also remove it at any time on your <a href="https://myaccount.google.com/permissions">Google Account permissions page</a>. Files you uploaded stay in the “Snapline” folder in your Drive until you delete them.</p>
+
+      <h2>S3-compatible storage</h2>
+      <p>If you use an S3-compatible bucket, your access key and secret are stored in the macOS Keychain. They are used only to sign upload requests sent directly to the endpoint you entered, over HTTPS.</p>
+
+      <h2>This website</h2>
+      <p>This website is a set of static pages. It uses no cookies, no analytics and no third-party scripts or fonts. It is hosted on Netlify, which may keep standard server logs, such as IP addresses and browser type, to run and protect the service. See <a href="https://www.netlify.com/privacy/">Netlify's privacy policy</a>.</p>
+
+      <h2>Children</h2>
+      <p>Snapline is not directed at children under 13, and we do not knowingly collect any data from them. Snapline does not collect personal data from anyone.</p>
+
+      <h2>Changes to this policy</h2>
+      <p>If this policy changes, the new version will be posted on this page with a new date. The history of changes is in the <a href="https://github.com/barayuda/Snapline">source repository</a>.</p>
+
+      <h2>Contact</h2>
+      <p>Questions about privacy: open an issue at <a href="https://github.com/barayuda/Snapline/issues">github.com/barayuda/Snapline/issues</a>.</p>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <nav aria-label="Footer">
+        <a href="/">Home</a>
+        <a href="/terms/">Terms of service</a>
+        <a href="https://github.com/barayuda/Snapline">Source code</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Snapline: screenshots for your Mac, with the private bits hidden</title>
+  <meta name="description" content="Snapline is a free screenshot tool for the Mac menu bar. Select an area, mark it up, then copy, save or share it. Emails, card numbers and keys are covered on your Mac before you share.">
+  <link rel="canonical" href="https://snapline.barayuda.web.id/">
+  <link rel="icon" href="/assets/favicon-64.png" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Snapline">
+  <meta property="og:description" content="Capture. Mark up. Hide what matters. A free screenshot tool for Macs with Apple silicon.">
+  <meta property="og:url" content="https://snapline.barayuda.web.id/">
+  <meta property="og:image" content="https://snapline.barayuda.web.id/assets/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#f6f5fb">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/hero.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="/"><img src="/assets/icon-256.png" alt="" width="36" height="36">Snapline</a>
+      <nav class="site-nav" aria-label="Site">
+        <a href="/privacy/">Privacy</a>
+        <a href="/terms/">Terms</a>
+        <a href="https://github.com/barayuda/Snapline">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <div class="wrap">
+        <div>
+          <h1><span>Capture.</span> <span>Mark up.</span> <span>Hide what matters.</span></h1>
+          <p class="lede">A free screenshot tool for the Mac menu bar. Drag over an area, draw on it, then copy, save or share it. Emails, card numbers and keys are covered before anyone else sees them.</p>
+          <div class="actions">
+            <a class="button primary" href="#get">Build it on your Mac</a>
+            <a class="button" href="https://github.com/barayuda/Snapline">See the code on GitHub</a>
+          </div>
+          <p class="fineprint">For Macs with Apple silicon, macOS 15 or newer. Everything runs on your Mac.</p>
+        </div>
+
+        <figure class="demo">
+          <div class="screen" id="screen">
+            <div class="window" aria-label="Example note with sensitive data hidden" role="group">
+              <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><b>Handover for Monday</b></div>
+              <div class="window-body">
+                <p>The new build is on staging.</p>
+                <p>Admin login: <button class="redact" type="button" aria-pressed="false" aria-label="Show the email address">dana@example.com</button></p>
+                <p>Key: <button class="redact mono" type="button" aria-pressed="false" aria-label="Show the API key">snp_9f2c7e41b8d04a6e93c1</button></p>
+                <p>Test card: <button class="redact" type="button" aria-pressed="false" aria-label="Show the card number">4242 4242 4242 4242</button></p>
+                <p>Questions? Call <button class="redact" type="button" aria-pressed="false" aria-label="Show the phone number">+1 415 555 0134</button></p>
+              </div>
+            </div>
+            <div class="selection" aria-hidden="true">
+              <i class="handle"></i><i class="handle"></i><i class="handle"></i><i class="handle"></i>
+              <i class="handle"></i><i class="handle"></i><i class="handle"></i><i class="handle"></i>
+              <span class="size">1058 × 586</span>
+            </div>
+            <div class="tools" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16l1-4 8-8 3 3-8 8-4 1z"/></svg>
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 16L16 4"/></svg>
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16L15 5M9 5h6v6"/></svg>
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="5.5" width="13" height="9" rx="1"/></svg>
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="10" cy="10" rx="6.5" ry="4.8"/></svg>
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 7h12M10 7v9"/></svg>
+              <svg class="on" viewBox="0 0 20 20" fill="currentColor"><rect x="3" y="7" width="14" height="6" rx="1"/></svg>
+            </div>
+          </div>
+          <figcaption>Try it: drag to select another area. Click a black box to see what auto-hide covered.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="section" id="features" aria-labelledby="features-title">
+      <div class="wrap split">
+        <div>
+          <h2 id="features-title">One shortcut to capture, one key for the rest</h2>
+          <p class="intro">Snapline lives in the menu bar. Press the shortcut, drag over what you need, and finish with a single key. It works like Lightshot, rebuilt for Apple silicon.</p>
+        </div>
+        <dl class="keys">
+          <div><dt><kbd>⇧</kbd><kbd>⌘</kbd><kbd>1</kbd></dt><dd><strong>Capture an area.</strong> <span>The screen freezes; drag, move and resize your selection. You can change the shortcut.</span></dd></div>
+          <div><dt><kbd>⌘</kbd><kbd>C</kbd></dt><dd><strong>Copy the image</strong>, ready to paste anywhere.</dd></div>
+          <div><dt><kbd>⇧</kbd><kbd>⌘</kbd><kbd>C</kbd></dt><dd><strong>Copy the text in it.</strong> <span>Read on your Mac, in reading order. Keyboard symbols like ⌘ and ⇧ come through too.</span></dd></div>
+          <div><dt><kbd>⌘</kbd><kbd>S</kbd></dt><dd><strong>Save to your Desktop</strong> <span>or any folder you pick in Preferences.</span></dd></div>
+          <div><dt><kbd>⌘</kbd><kbd>D</kbd></dt><dd><strong>Upload and copy the link.</strong> <span>To your own S3-compatible bucket or your own Google Drive.</span></dd></div>
+          <div><dt><kbd>⌘</kbd><kbd>E</kbd></dt><dd><strong>Open in another app</strong>, such as Preview.</dd></div>
+          <div><dt><kbd>⌘</kbd><kbd>P</kbd></dt><dd><strong>Print</strong> it.</dd></div>
+          <div><dt><kbd>P</kbd><kbd>A</kbd><kbd>R</kbd><kbd>T</kbd></dt><dd><strong>Draw on it</strong>: <span>pencil, arrow, rectangle, text, plus line, ellipse and marker.</span></dd></div>
+          <div><dt><kbd>H</kbd></dt><dd><strong>Hide an area by hand</strong> <span>when auto-hide missed something.</span></dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="section" id="auto-hide" aria-labelledby="auto-hide-title">
+      <div class="wrap split">
+        <div>
+          <h2 id="auto-hide-title">Sensitive data is covered before you share</h2>
+          <p class="intro">When the screen freezes, Snapline reads it on your Mac and puts a solid box over anything that looks private. Click a box to show it again.</p>
+        </div>
+        <div>
+          <ul class="plain">
+            <li>Email addresses and phone numbers</li>
+            <li>Card numbers and IBANs, checked so ordinary numbers stay visible</li>
+            <li>API keys, tokens, passwords and long random strings</li>
+            <li>Faces</li>
+          </ul>
+          <p class="note">Auto-hide is a safety net, not a guarantee. Very small, faint or rotated text can be missed, so check the image before you share it.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="privacy" aria-labelledby="privacy-title">
+      <div class="wrap split">
+        <div>
+          <h2 id="privacy-title">Nothing leaves your Mac unless you send it</h2>
+        </div>
+        <div>
+          <p class="intro">Snapline has no servers, no accounts of its own, no analytics and no tracking. Capturing, auto-hide and Copy Text use Apple's built-in frameworks on your Mac.</p>
+          <ul class="plain">
+            <li><strong>Upload</strong> sends the image to the place you set up: your own bucket or your own Google Drive.</li>
+            <li><strong>Search similar images</strong> uploads it there first, then opens Google Lens or TinEye with the link.</li>
+            <li><strong>Email</strong> hands the file to your mail app.</li>
+            <li>Bucket keys and your Google sign-in are kept in the macOS Keychain.</li>
+          </ul>
+          <p class="note">Details, including what Snapline does with Google account data: <a href="/privacy/">Privacy policy</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="get" aria-labelledby="get-title">
+      <div class="wrap split">
+        <div>
+          <h2 id="get-title">Build it on your Mac</h2>
+          <p class="intro">Snapline is built from source, which takes about a minute. You need a Mac with Apple silicon, macOS 15 or newer, and Xcode.</p>
+        </div>
+        <ol class="steps">
+          <li>
+            <div>
+              <p>Get the code.</p>
+              <div class="code"><pre id="step-clone">git clone https://github.com/barayuda/Snapline.git
+cd Snapline</pre><button class="copy" type="button" data-copy="step-clone">Copy</button></div>
+            </div>
+          </li>
+          <li>
+            <div>
+              <p>Build it and put it in Applications.</p>
+              <div class="code"><pre id="step-build">scripts/make-app.sh --install</pre><button class="copy" type="button" data-copy="step-build">Copy</button></div>
+            </div>
+          </li>
+          <li>
+            <div>
+              <p>Press <kbd>⇧</kbd><kbd>⌘</kbd><kbd>1</kbd>. macOS asks once for Screen Recording permission; allow it, and you are set.</p>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <nav aria-label="Footer">
+        <a href="/privacy/">Privacy policy</a>
+        <a href="/terms/">Terms of service</a>
+        <a href="https://github.com/barayuda/Snapline">Source code</a>
+        <a href="https://github.com/barayuda/Snapline/issues">Report a problem</a>
+      </nav>
+      <p>Snapline is made by Barayuda and is free for personal and other noncommercial use under the <a href="https://github.com/barayuda/Snapline/blob/main/LICENSE.md">PolyForm Noncommercial License 1.0.0</a>.</p>
+      <p>Inspired by <a href="https://app.prntscr.com/">Lightshot Screenshot</a> by Skillbrains, with thanks. Snapline is written from scratch and is not affiliated with or endorsed by Skillbrains. Lightshot is their trademark.</p>
+    </div>
+  </footer>
+</body>
+</html>
