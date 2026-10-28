@@ -30,9 +30,11 @@ struct PreferencesView: View {
                 UploadTab().tabItem { Label("Upload", systemImage: "icloud.and.arrow.up") }
                 AutoHideTab().tabItem { Label("Auto-hide", systemImage: "eye.slash") }
             }
+            // A grouped Form has no natural height inside a TabView; without this the tabs collapse to nothing.
+            .frame(height: 470)
         }
         .tint(Color(nsColor: Brand.violet))
-        .frame(width: 520)
+        .frame(width: 560)
         .padding()
     }
 }
@@ -64,6 +66,7 @@ private struct GeneralTab: View {
     @AppStorage(Key.hotKeyDisplay) private var hotKeyDisplay = "⇧⌘1"
     @AppStorage(Key.downscaleRetina) private var downscaleRetina = false
     @AppStorage(Key.editorAppPath) private var editorAppPath = "/System/Applications/Preview.app"
+    @AppStorage(Key.saveDirectory) private var saveDirectory = Settings.saveDirectory.path
     @State private var recording = false
     @State private var monitor: Any?
     @State private var hotKeyError: String?
@@ -82,6 +85,18 @@ private struct GeneralTab: View {
                 }
             }
             if let hotKeyError { Text(hotKeyError).foregroundStyle(.red).font(.caption) }
+
+            LabeledContent("Save screenshots to") {
+                HStack {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: saveDirectory))
+                        .resizable()
+                        .frame(width: 16, height: 16)
+                        .accessibilityHidden(true)
+                    Text(FileManager.default.displayName(atPath: saveDirectory))
+                        .help(saveDirectory)
+                    Button("Choose…", action: chooseSaveDirectory)
+                }
+            }
 
             Toggle("Launch at login", isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) { _, on in setLaunchAtLogin(on) }
@@ -142,6 +157,16 @@ private struct GeneralTab: View {
         if on && SMAppService.mainApp.status == .requiresApproval {
             loginError = "Allow Snapline in System Settings → General → Login Items."
         }
+    }
+
+    private func chooseSaveDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.prompt = "Use This Folder"
+        panel.directoryURL = URL(fileURLWithPath: saveDirectory)
+        if panel.runModal() == .OK, let url = panel.url { saveDirectory = url.path }
     }
 
     private func chooseEditor() {

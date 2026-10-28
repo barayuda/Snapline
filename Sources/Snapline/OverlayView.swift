@@ -81,7 +81,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             ("envelope", "Email", .email),
             ("printer", "Print (⌘P)", .print),
             ("doc.on.doc", "Copy (⌘C)", .copy),
-            ("square.and.arrow.down", "Save (⌘S)", .save),
+            ("square.and.arrow.down", "Save to default folder (⌘S) · ⌥-click or ⌥⌘S: Save As…", .save),
             ("xmark", "Close (Esc)", .cancel),
         ]
         let buttons = actions.enumerated().map { i, a in
@@ -127,7 +127,8 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
     @objc private func actionClicked(_ sender: NSButton) {
         commitText()
-        if let action = mainActions[sender.tag] {
+        if var action = mainActions[sender.tag] {
+            if case .save = action, NSEvent.modifierFlags.contains(.option) { action = .saveAs }
             session.perform(action)
             return
         }
@@ -443,7 +444,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             if flags.contains(.command) {
                 switch chars {
                 case "c": session.perform(.copy)
-                case "s": session.perform(.save)
+                case "s": session.perform(flags.contains(.option) ? .saveAs : .save)
                 case "d": session.perform(.upload)
                 case "p": session.perform(.print)
                 case "e": session.perform(.edit)

@@ -1,5 +1,4 @@
 import AppKit
-import UserNotifications
 
 /// Small floating panel shown while uploading: progress, then the link with Copy / Open / Email.
 @MainActor
@@ -83,12 +82,12 @@ final class UploadPanel: NSObject, NSWindowDelegate {
             link.stringValue = result.pageURL.absoluteString
             link.isHidden = false
             buttons.isHidden = false
-            notify("Screenshot uploaded", result.pageURL.absoluteString)
+            Actions.notify("Screenshot uploaded", result.pageURL.absoluteString)
             if let search { NSWorkspace.shared.open(search.url(for: result.directURL)) }
         } catch {
             status.stringValue = "Upload failed: \(error.localizedDescription)"
             progress.isHidden = true
-            notify("Upload failed", error.localizedDescription)
+            Actions.notify("Upload failed", error.localizedDescription)
         }
     }
 
@@ -108,16 +107,5 @@ final class UploadPanel: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         Self.openPanels.removeAll { $0 === self }
-    }
-
-    private func notify(_ title: String, _ body: String) {
-        Task {
-            let center = UNUserNotificationCenter.current()
-            guard (try? await center.requestAuthorization(options: [.alert])) == true else { return }
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = body
-            try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
-        }
     }
 }

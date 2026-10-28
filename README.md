@@ -32,7 +32,7 @@ On the first capture macOS asks for **Screen Recording** permission (System Sett
 | Text | Text tool, click, type, Return. Scroll while typing to change size. Drag a finished text with the text tool to move it |
 | Undo | ⌘Z |
 | Copy | ⌘C or Return |
-| Save | ⌘S (PNG, `Screenshot at MMM dd HH-mm-ss.png`) |
+| Save | ⌘S saves straight to the folder set in Preferences → General (Desktop by default) as `Screenshot at MMM dd HH-mm-ss.png`; never overwrites. ⌥⌘S (or ⌥-click Save) opens a Save As dialog |
 | Upload | ⌘D. The link is copied to the clipboard |
 | Edit in another app | ⌘E (Preview by default; choose another app in Preferences) |
 | Print | ⌘P |

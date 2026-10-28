@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Builds build/Snapline.app (arm64, release) and signs it ad hoc.
-# Usage: scripts/make-app.sh [--install]   (--install copies it to ~/Applications)
+# Usage: scripts/make-app.sh [--install]   (--install replaces /Applications/Snapline.app and starts it)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -46,9 +46,16 @@ codesign --force --sign - --identifier dev.barayuda.snapline "$APP"
 codesign --verify --strict "$APP"
 lipo -info "$APP/Contents/MacOS/Snapline"
 
+# Tell Launch Services about the new bundle, so Finder, Dock and System Settings show the current icon.
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+"$LSREGISTER" -f "$APP"
+
 if [[ "${1:-}" == "--install" ]]; then
-  mkdir -p ~/Applications
-  rm -rf ~/Applications/Snapline.app
-  cp -R "$APP" ~/Applications/
-  echo "Installed to ~/Applications/Snapline.app"
+  # Quit the running copy, replace /Applications/Snapline.app, register it and start it again.
+  pkill -x Snapline 2>/dev/null && sleep 1 || true
+  rm -rf /Applications/Snapline.app
+  cp -R "$APP" /Applications/
+  "$LSREGISTER" -f /Applications/Snapline.app
+  open /Applications/Snapline.app
+  echo "Installed and started /Applications/Snapline.app"
 fi

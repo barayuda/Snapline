@@ -1,6 +1,7 @@
 import AppKit
 import SnaplineCore
 import UniformTypeIdentifiers
+import UserNotifications
 
 /// What happens to the flattened screenshot after the overlay closes.
 @MainActor
@@ -11,6 +12,7 @@ enum Actions {
         switch action {
         case .copy: copy(image, png)
         case .save: save(png, name: Naming.fileName(for: date))
+        case .saveAs: saveAs(png, name: Naming.fileName(for: date))
         case .print: print(image)
         case .edit: edit(png, name: Naming.fileName(for: date))
         case .email: email(png, name: Naming.fileName(for: date), link: nil)
@@ -41,20 +43,43 @@ enum Actions {
         pb.writeObjects([item])
     }
 
+    /// ⌘S: straight into the folder from Preferences (Desktop by default), never overwriting.
     static func save(_ png: Data, name: String) {
+        let dir = Settings.saveDirectory
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = Naming.uniqueFileURL(in: dir, name: name) { FileManager.default.fileExists(atPath: $0.path) }
+            try png.write(to: url)
+            notify("Screenshot saved", "\(url.lastPathComponent) in \(FileManager.default.displayName(atPath: dir.path))")
+        } catch {
+            NSApp.activate()
+            let alert = NSAlert(error: error)
+            alert.informativeText = "Could not save to \(dir.path). Choose another folder in Snapline Preferences → General."
+            alert.runModal()
+        }
+    }
+
+    /// ⌥⌘S: pick a place once; the dialog starts in the default folder.
+    static func saveAs(_ png: Data, name: String) {
         NSApp.activate()
         let panel = NSSavePanel()
         panel.nameFieldStringValue = name
         panel.allowedContentTypes = [.png]
         panel.canCreateDirectories = true
-        if let dir = UserDefaults.standard.url(forKey: Key.lastSaveDirectory) {
-            panel.directoryURL = dir
-        } else {
-            panel.directoryURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
-        }
+        panel.directoryURL = Settings.saveDirectory
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        UserDefaults.standard.set(url.deletingLastPathComponent(), forKey: Key.lastSaveDirectory)
         do { try png.write(to: url) } catch { NSAlert(error: error).runModal() }
+    }
+
+    static func notify(_ title: String, _ body: String) {
+        Task {
+            let center = UNUserNotificationCenter.current()
+            guard (try? await center.requestAuthorization(options: [.alert])) == true else { return }
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        }
     }
 
     static func print(_ image: CGImage) {

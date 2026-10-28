@@ -22,6 +22,15 @@ final class NamingTests: XCTestCase {
         XCTAssertNotEqual(Naming.objectKey(prefix: "shots", date: date), key)
     }
 
+    func testUniqueFileURLAddsNumberWhenNameIsTaken() {
+        let dir = URL(fileURLWithPath: "/tmp/shots", isDirectory: true)
+        let taken: Set<String> = ["/tmp/shots/Screenshot at Mar 07 09-05-02.png", "/tmp/shots/Screenshot at Mar 07 09-05-02 2.png"]
+        let free = Naming.uniqueFileURL(in: dir, name: "Screenshot at Mar 07 09-05-01.png") { taken.contains($0.path) }
+        XCTAssertEqual(free.lastPathComponent, "Screenshot at Mar 07 09-05-01.png")
+        let third = Naming.uniqueFileURL(in: dir, name: "Screenshot at Mar 07 09-05-02.png") { taken.contains($0.path) }
+        XCTAssertEqual(third.lastPathComponent, "Screenshot at Mar 07 09-05-02 3.png")
+    }
+
     func testObjectKeyWithoutPrefix() {
         XCTAssertEqual(Naming.objectKey(prefix: "", date: date).split(separator: "/").count, 3)
     }

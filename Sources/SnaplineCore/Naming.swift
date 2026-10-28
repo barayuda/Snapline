@@ -9,6 +9,18 @@ public enum Naming {
         return "Screenshot at \(f.string(from: date)).png"
     }
 
+    /// `name` in `dir`, or `name 2`, `name 3`… if taken, so a save never overwrites an earlier shot.
+    public static func uniqueFileURL(in dir: URL, name: String, exists: (URL) -> Bool) -> URL {
+        let base = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
+        var url = dir.appendingPathComponent(name)
+        var n = 2
+        while exists(url) {
+            url = dir.appendingPathComponent("\(base) \(n).\(ext)")
+            n += 1
+        }
+        return url
+    }
+
     /// `<prefix>/<yyyy>/<mm>/<10 random chars>.png`. Random, so links cannot be guessed.
     public static func objectKey(prefix: String, date: Date) -> String {
         let f = DateFormatter()

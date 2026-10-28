@@ -19,7 +19,7 @@ enum Key {
     static let googleClientID = "googleClientID"
     static let googleEmail = "googleEmail"
     static let driveFolderID = "driveFolderID"
-    static let lastSaveDirectory = "lastSaveDirectory"
+    static let saveDirectory = "saveDirectory"        // folder path for ⌘S
 
     static func autoHide(_ c: SensitiveCategory) -> String { "autoHide.\(c.rawValue)" }
 }
@@ -41,6 +41,7 @@ enum Settings {
             Key.uploadTarget: "s3",
             Key.s3Region: "auto",
             Key.s3Prefix: "snapline",
+            Key.saveDirectory: FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0].path,
         ]
         for c in SensitiveCategory.allCases { defaults[Key.autoHide(c)] = true }
         UserDefaults.standard.register(defaults: defaults)
@@ -49,6 +50,10 @@ enum Settings {
     static var autoHideCategories: Set<SensitiveCategory> {
         guard UserDefaults.standard.bool(forKey: Key.autoHideEnabled) else { return [] }
         return Set(SensitiveCategory.allCases.filter { UserDefaults.standard.bool(forKey: Key.autoHide($0)) })
+    }
+
+    static var saveDirectory: URL {
+        URL(fileURLWithPath: string(Key.saveDirectory), isDirectory: true)
     }
 
     static func string(_ key: String) -> String {
