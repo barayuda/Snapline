@@ -481,6 +481,46 @@
           "jane@example.com"
         ]
       ]
+    },
+    {
+      "name": "day-first date is not a phone",
+      "text": [
+        "Due 28-10-2026 at noon"
+      ],
+      "hidden": []
+    },
+    {
+      "name": "phone with dots",
+      "text": [
+        "Call 415.555.0132 now"
+      ],
+      "hidden": [
+        [
+          "415.555.0132"
+        ]
+      ]
+    },
+    {
+      "name": "space-grouped number reads as a phone, as on macOS",
+      "text": [
+        "Population 12 345 678 people"
+      ],
+      "hidden": [
+        [
+          "12 345 678"
+        ]
+      ]
+    },
+    {
+      "name": "phone with country code and spaces",
+      "text": [
+        "Ring +1 415 555 0132 later"
+      ],
+      "hidden": [
+        [
+          "+1 415 555 0132"
+        ]
+      ]
     }
   ]
 }

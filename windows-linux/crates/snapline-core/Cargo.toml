@@ -6,6 +6,12 @@ license-file.workspace = true
 publish.workspace = true
 
 [dependencies]
+fancy-regex = "0.20.0"
+regex = "1.13.1"
+serde = { version = "1.0.229", features = ["derive"] }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+serde_json = "1.0.154"
