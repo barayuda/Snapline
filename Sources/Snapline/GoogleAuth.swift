@@ -35,25 +35,24 @@ final class GoogleAuth {
                                                              challenge: PKCE.challenge(for: verifier), state: state))
 
         let line = try await server.waitForCallback()
-        let code: String
+        // The browser waits for the token exchange, so its page only says "signed in" once that is true.
         do {
-            code = try GoogleOAuth.code(fromRequestLine: line, expectedState: state)
-            server.reply("Signed in to Snapline. You can close this tab.")
+            let code = try GoogleOAuth.code(fromRequestLine: line, expectedState: state)
+            let token = try await tokenRequest([
+                "code": code, "client_id": clientID, "client_secret": clientSecret,
+                "redirect_uri": redirect, "grant_type": "authorization_code", "code_verifier": verifier,
+            ])
+            guard let refresh = token.refreshToken else { throw UploadError(message: "Google did not return a refresh token.") }
+            Keychain.set(.googleRefreshToken, refresh)
+            UserDefaults.standard.set(token.idToken.flatMap(GoogleOAuth.email(fromIDToken:)), forKey: Key.googleEmail)
+            UserDefaults.standard.removeObject(forKey: Key.driveFolderID)
+            accessToken = token.accessToken
+            expiry = Date().addingTimeInterval(TimeInterval(token.expiresIn - 60))
+            server.reply(signedIn: true)
         } catch {
-            server.reply("Snapline sign-in failed: \(error.localizedDescription)")
+            server.reply(signedIn: false, reason: error.localizedDescription)
             throw error
         }
-
-        let token = try await tokenRequest([
-            "code": code, "client_id": clientID, "client_secret": clientSecret,
-            "redirect_uri": redirect, "grant_type": "authorization_code", "code_verifier": verifier,
-        ])
-        guard let refresh = token.refreshToken else { throw UploadError(message: "Google did not return a refresh token.") }
-        Keychain.set(.googleRefreshToken, refresh)
-        UserDefaults.standard.set(token.idToken.flatMap(GoogleOAuth.email(fromIDToken:)), forKey: Key.googleEmail)
-        UserDefaults.standard.removeObject(forKey: Key.driveFolderID)
-        accessToken = token.accessToken
-        expiry = Date().addingTimeInterval(TimeInterval(token.expiresIn - 60))
     }
 
     func signOut() async {
@@ -184,11 +183,14 @@ private final class LoopbackServer: @unchecked Sendable {
         c.resume(with: result)
     }
 
-    func reply(_ message: String) {
+    func reply(signedIn: Bool, reason: String = "") {
         queue.async {
             guard let conn = self.connection else { return }
-            let html = GoogleOAuth.callbackPage(message: message)
-            let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n\(html)"
+            let html = GoogleOAuth.callbackPage(signedIn: signedIn, reason: reason)
+            // The page's URL holds the sign-in code: allow only its inline style and icon, and keep it out of the cache.
+            let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\n"
+                + "Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'\r\n"
+                + "Cache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n\(html)"
             conn.send(content: Data(response.utf8), completion: .contentProcessed { _ in conn.cancel() })
         }
     }

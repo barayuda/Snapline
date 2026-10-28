@@ -57,9 +57,29 @@ struct GoogleOAuthTests {
     }
 
     @Test func callbackPageEscapesHTML() {
-        let page = GoogleOAuth.callbackPage(message: "failed: <script>alert(1)</script> & \"x\"")
+        let page = GoogleOAuth.callbackPage(signedIn: false, reason: "failed: <script>alert(1)</script> & \"x\"")
         #expect(!page.contains("<script>"))
         #expect(page.contains("&lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;x&quot;"))
+    }
+
+    @Test func callbackPageSaysWhatHappenedAndWhatToDoNext() {
+        let ok = GoogleOAuth.callbackPage(signedIn: true)
+        #expect(ok.contains("<title>Signed in to Snapline</title>"))
+        #expect(ok.contains("You can close this tab"))
+
+        let failed = GoogleOAuth.callbackPage(signedIn: false, reason: "Google sign-in failed: access_denied")
+        #expect(failed.contains("<title>Snapline sign-in did not finish</title>"))
+        #expect(failed.contains("Google sign-in failed: access_denied"))
+        #expect(failed.contains("Sign in with Google…"))   // how to try again
+    }
+
+    @Test(arguments: [true, false])
+    func callbackPageLoadsNothingFromTheNetwork(signedIn: Bool) {
+        // Served from 127.0.0.1 with the sign-in code in its URL: no fonts, images or links that could leak it or fail offline.
+        let page = GoogleOAuth.callbackPage(signedIn: signedIn, reason: "x")
+        #expect(!page.contains("http"))   // also rules out url(https://…) and links
+        #expect(!page.contains("src="))
+        #expect(!page.contains("//"))
     }
 
     @Test func formBodyEncodesEverythingButUnreservedASCII() {

@@ -73,17 +73,52 @@ public enum GoogleOAuth {
         return code
     }
 
-    /// The page the browser shows after the redirect. `message` is escaped: it can contain text from the request.
-    public static func callbackPage(message: String) -> String {
-        let escaped = message
+    /// The branded page the browser shows after the redirect, served by Snapline on 127.0.0.1.
+    /// Self-contained (inline styles and icon) so it works offline and loads nothing that could see the code in its URL.
+    /// `reason` is escaped: it can contain text from the request.
+    public static func callbackPage(signedIn: Bool, reason: String = "") -> String {
+        let escaped = reason
             .replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "'", with: "&#39;")
-        return "<!doctype html><meta charset=utf-8><title>Snapline</title>"
-            + "<body style='font:16px -apple-system;padding:40px'>\(escaped)"
+        let title = signedIn ? "Signed in to Snapline" : "Snapline sign-in did not finish"
+        let body = signedIn
+            ? "<h1>You’re signed in</h1><p>Snapline can now upload to your Google Drive. You can close this tab and go back to Snapline.</p>"
+            : "<h1>Sign-in did not finish</h1><p class=reason>\(escaped)</p>"
+                + "<p>Close this tab, then click <b>Sign in with Google…</b> in Snapline’s Preferences to try again.</p>"
+        return """
+            <!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+            <title>\(title)</title><style>\(callbackStyle)</style>
+            <main>\(callbackIcon)\(body)</main>
+            """
     }
+
+    // Brand colours from BRAND.md: ink, paper, violet deep → cyan.
+    private static let callbackStyle = """
+        :root{color-scheme:light dark;--paper:#f6f5fb;--ink:#0c0819;--muted:#565170;--card:#fff}
+        @media(prefers-color-scheme:dark){:root{--paper:#0c0819;--ink:#f3f1fa;--muted:#a9a3c2;--card:#17112b}}
+        body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--paper);color:var(--ink);\
+        font:17px/1.55 -apple-system,BlinkMacSystemFont,system-ui,sans-serif}
+        main{width:min(100% - 3rem,30rem);padding:2.5rem;border-radius:20px;background:var(--card);\
+        box-shadow:0 1px 2px rgba(12,8,25,.06),0 24px 48px -24px rgba(44,20,120,.35)}
+        svg{width:64px;height:64px;display:block;margin-bottom:1.5rem}
+        h1{font-size:1.75rem;line-height:1.15;letter-spacing:-.02em;margin:0 0 .6rem}
+        p{margin:0 0 .75rem;color:var(--muted)}p:last-child{margin:0}
+        .reason{color:var(--ink);padding:.6rem .8rem;border-left:3px solid #e5484d;background:rgba(229,72,77,.08);border-radius:0 8px 8px 0}
+        """
+
+    /// The app icon, drawn inline: a violet → cyan squircle with white selection corners and a spark.
+    private static let callbackIcon = """
+        <svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">\
+        <stop offset="0" stop-color="#4c1ab8"/><stop offset=".5" stop-color="#7c3aed"/><stop offset="1" stop-color="#22d3ee"/>\
+        </linearGradient></defs><rect width="64" height="64" rx="15" fill="url(#g)"/>\
+        <g fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">\
+        <path d="M14 24v-10h10M40 14h10v10M50 40v10h-10M24 50h-10v-10"/></g>\
+        <path fill="#fff" d="M32 22c.9 6.4 3.6 9.1 10 10c-6.4.9-9.1 3.6-10 10c-.9-6.4-3.6-9.1-10-10c6.4-.9 9.1-3.6 10-10z"/>\
+        <path fill="#fff" d="M42 18c.3 2 1 2.7 3 3c-2 .3-2.7 1-3 3c-.3-2-1-2.7-3-3c2-.3 2.7-1 3-3z"/></svg>
+        """
 
     /// True when the token endpoint's error body says the refresh token is expired or revoked
     /// (`{"error":"invalid_grant"}`), so the user has to sign in again.
