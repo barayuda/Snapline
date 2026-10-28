@@ -3,6 +3,10 @@
 
 pub mod drive_multipart;
 pub mod google_oauth;
+pub mod naming;
 pub mod percent_encoding;
+pub mod recognition_languages;
 pub mod sensitive_text;
+pub mod shortcut_words;
 pub mod sigv4;
+pub mod uncertain_marks;
