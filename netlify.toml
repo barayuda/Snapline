@@ -6,3 +6,11 @@
   # Only the website branch deploys and every push to it is deliberate, so always deploy.
   # (Without this, Netlify skips builds when it thinks site/ did not change.)
   ignore = "exit 1"
+
+# One public address: send the Netlify subdomain to the custom domain, keeping the path.
+# Deploy permalinks (<id>--snapline-app.netlify.app) are other hosts, so they still work for checking a deploy.
+[[redirects]]
+  from = "https://snapline-app.netlify.app/*"
+  to = "https://snapline.barayuda.web.id/:splat"
+  status = 301
+  force = true
