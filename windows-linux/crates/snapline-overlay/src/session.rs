@@ -3,7 +3,7 @@
 
 use crate::annotation::{Annotation, Shape, Tool};
 use crate::color::{PALETTE, Rgb};
-use crate::input::Mods;
+use crate::input::{Key, Mods};
 use crate::render;
 use crate::text::TextFont;
 use snapline_core::selection_geometry::{self as geo, Handle, Point, Rect};
@@ -232,7 +232,6 @@ impl Session {
     }
 
     /// A command that needs a selection: beep without one.
-    #[allow(dead_code)] // used by the keyboard and toolbar (Tasks 5 and 6)
     pub(crate) fn request(&self, c: Command) -> Effect {
         if self.selected().is_some() {
             Effect::command(c)
@@ -394,6 +393,102 @@ impl Session {
         }
         self.width = (self.width + step).clamp(1.0, 20.0);
         Effect::NONE
+    }
+
+    /// Ctrl without Alt is a shortcut. Ctrl+Alt is the `AltGr` key on Windows, which types characters.
+    fn is_shortcut(mods: Mods) -> bool {
+        mods.ctrl && !mods.alt
+    }
+
+    pub fn key(&mut self, key: Key, mods: Mods) -> Effect {
+        if let Some(i) = self.overlays.iter().position(|o| o.editing.is_some()) {
+            match key {
+                Key::Enter | Key::Escape => {
+                    self.commit_text();
+                    return Effect::one(i);
+                }
+                Key::Backspace => {
+                    if let Some(e) = self.overlays[i].editing.as_mut() {
+                        e.text.pop();
+                    }
+                    return Effect::one(i);
+                }
+                Key::Char(c) if !Self::is_shortcut(mods) && !c.is_control() => {
+                    if let Some(e) = self.overlays[i].editing.as_mut() {
+                        e.text.push(c);
+                    }
+                    return Effect::one(i);
+                }
+                // A shortcut finishes the text first, so Ctrl+C copies what was typed.
+                _ if Self::is_shortcut(mods) => self.commit_text(),
+                _ => return Effect::NONE,
+            }
+        }
+        match key {
+            Key::Escape => Effect::command(Command::Cancel),
+            Key::Enter => self.request(Command::Copy),
+            Key::Left => self.nudge(-1.0, 0.0, mods),
+            Key::Right => self.nudge(1.0, 0.0, mods),
+            Key::Up => self.nudge(0.0, -1.0, mods),
+            Key::Down => self.nudge(0.0, 1.0, mods),
+            Key::Char(c) if Self::is_shortcut(mods) => match c.to_ascii_lowercase() {
+                'c' => self.request(Command::Copy),
+                's' => self.request(if mods.shift {
+                    Command::SaveAs
+                } else {
+                    Command::Save
+                }),
+                'z' => self.undo(),
+                'a' => self.select_whole_screen(),
+                _ => Effect::NONE,
+            },
+            Key::Char('+' | '=') => {
+                self.width = (self.width + 1.0).min(20.0);
+                Effect::NONE
+            }
+            Key::Char('-') => {
+                self.width = (self.width - 1.0).max(1.0);
+                Effect::NONE
+            }
+            Key::Char('v' | 'V') => {
+                self.tool = None;
+                Effect::all()
+            }
+            Key::Char(c) => match Tool::for_key(c) {
+                Some(t) => {
+                    self.tool = if self.tool == Some(t) { None } else { Some(t) };
+                    Effect::all()
+                }
+                None => Effect::NONE,
+            },
+            Key::Backspace => Effect::NONE,
+        }
+    }
+
+    /// Arrows move the selection; Alt resizes it; Shift uses 10-point steps.
+    fn nudge(&mut self, dx: f64, dy: f64, mods: Mods) -> Effect {
+        let i = self.focused;
+        let o = &mut self.overlays[i];
+        let Some(mut sel) = o.selection else {
+            return Effect::NONE;
+        };
+        let step = if mods.shift { 10.0 } else { 1.0 } * o.ui_scale;
+        let b = o.bounds();
+        if mods.alt {
+            sel.width = (sel.width + dx * step).max(1.0).min(b.width - sel.x);
+            sel.height = (sel.height + dy * step).max(1.0).min(b.height - sel.y);
+        } else {
+            sel = geo::move_within(sel, dx * step, dy * step, b);
+        }
+        o.selection = Some(sel);
+        Effect::one(i)
+    }
+
+    pub fn select_whole_screen(&mut self) -> Effect {
+        let i = self.focused;
+        self.clear_selections_except(i);
+        self.overlays[i].selection = Some(self.overlays[i].bounds());
+        Effect::all()
     }
 
     pub fn undo(&mut self) -> Effect {
@@ -641,5 +736,182 @@ pub(crate) mod tests {
     #[test]
     fn export_needs_a_selection() {
         assert!(session(1, 1.0).export().is_none());
+    }
+
+    use crate::input::Key;
+
+    fn ctrl() -> Mods {
+        Mods {
+            ctrl: true,
+            ..Mods::default()
+        }
+    }
+
+    fn typing(s: &mut Session, text: &str) {
+        for c in text.chars() {
+            s.key(Key::Char(c), Mods::default());
+        }
+    }
+
+    /// A selection with the text tool and a text box open inside it.
+    fn text_box() -> Session {
+        let mut s = selected(1.0);
+        s.tool = Some(Tool::Text);
+        s.pointer_down(0, pt(30.0, 30.0), Mods::default());
+        s.pointer_up(0, pt(30.0, 30.0));
+        assert!(s.overlays[0].editing.is_some());
+        s
+    }
+
+    fn texts(s: &Session) -> Vec<String> {
+        s.overlays[0]
+            .annotations
+            .iter()
+            .filter_map(|a| match &a.shape {
+                Shape::Text { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn escape_closes_and_enter_copies_only_with_a_selection() {
+        let mut s = session(1, 1.0);
+        assert_eq!(
+            s.key(Key::Escape, Mods::default()).command,
+            Some(Command::Cancel)
+        );
+        assert!(s.key(Key::Enter, Mods::default()).beep);
+        let mut s = selected(1.0);
+        assert_eq!(
+            s.key(Key::Enter, Mods::default()).command,
+            Some(Command::Copy)
+        );
+    }
+
+    #[test]
+    fn ctrl_shortcuts() {
+        let mut s = selected(1.0);
+        assert_eq!(s.key(Key::Char('c'), ctrl()).command, Some(Command::Copy));
+        assert_eq!(s.key(Key::Char('s'), ctrl()).command, Some(Command::Save));
+        let shift = Mods {
+            ctrl: true,
+            shift: true,
+            alt: false,
+        };
+        assert_eq!(s.key(Key::Char('S'), shift).command, Some(Command::SaveAs));
+    }
+
+    #[test]
+    fn tool_letters_toggle_and_v_drops_the_tool() {
+        let mut s = selected(1.0);
+        s.key(Key::Char('r'), Mods::default());
+        assert_eq!(s.tool, Some(Tool::Rectangle));
+        s.key(Key::Char('r'), Mods::default());
+        assert_eq!(s.tool, None);
+        s.key(Key::Char('p'), Mods::default());
+        s.key(Key::Char('v'), Mods::default());
+        assert_eq!(s.tool, None);
+    }
+
+    #[test]
+    fn arrows_move_shift_moves_ten_alt_resizes() {
+        let mut s = selected(1.0);
+        s.key(Key::Right, Mods::default());
+        s.key(
+            Key::Down,
+            Mods {
+                shift: true,
+                ..Mods::default()
+            },
+        );
+        assert_eq!(
+            s.overlays[0].selection,
+            Some(Rect::new(11.0, 20.0, 100.0, 50.0))
+        );
+        s.key(
+            Key::Right,
+            Mods {
+                alt: true,
+                ..Mods::default()
+            },
+        );
+        assert_eq!(s.overlays[0].selection.unwrap().width, 101.0);
+    }
+
+    #[test]
+    fn ctrl_a_selects_the_whole_focused_screen() {
+        let mut s = selected(1.0);
+        s.focused = 1;
+        s.key(Key::Char('a'), ctrl());
+        assert_eq!(
+            s.overlays[1].selection,
+            Some(Rect::new(0.0, 0.0, 400.0, 300.0))
+        );
+        assert_eq!(s.overlays[0].selection, None);
+    }
+
+    #[test]
+    fn typing_then_enter_adds_text() {
+        let mut s = text_box();
+        typing(&mut s, "Hix");
+        s.key(Key::Backspace, Mods::default());
+        typing(&mut s, "!");
+        s.key(Key::Enter, Mods::default());
+        assert_eq!(texts(&s), ["Hi!"]);
+        assert!(s.overlays[0].editing.is_none());
+    }
+
+    #[test]
+    fn letters_while_typing_are_text_not_tools() {
+        let mut s = text_box();
+        typing(&mut s, "rv");
+        assert_eq!(s.tool, Some(Tool::Text));
+        assert_eq!(s.overlays[0].editing.as_ref().unwrap().text, "rv");
+    }
+
+    #[test]
+    fn an_empty_text_box_leaves_nothing() {
+        let mut s = text_box();
+        typing(&mut s, "   ");
+        s.key(Key::Enter, Mods::default());
+        assert_eq!(texts(&s), [] as [&str; 0]);
+    }
+
+    // Review Focus 4.
+    #[test]
+    fn ctrl_c_while_typing_keeps_the_text() {
+        let mut s = text_box();
+        typing(&mut s, "Hi");
+        assert_eq!(s.key(Key::Char('c'), ctrl()).command, Some(Command::Copy));
+        assert_eq!(texts(&s), ["Hi"]);
+    }
+
+    // Review Focus 4.
+    #[test]
+    fn escape_while_typing_finishes_text_instead_of_closing() {
+        let mut s = text_box();
+        typing(&mut s, "Hi");
+        assert_eq!(s.key(Key::Escape, Mods::default()).command, None);
+        assert_eq!(texts(&s), ["Hi"]);
+        assert_eq!(
+            s.key(Key::Escape, Mods::default()).command,
+            Some(Command::Cancel)
+        );
+    }
+
+    // Review Focus 5: AltGr arrives as Ctrl+Alt on Windows.
+    #[test]
+    fn altgr_characters_are_typed_not_shortcuts() {
+        let mut s = text_box();
+        let altgr = Mods {
+            ctrl: true,
+            alt: true,
+            shift: false,
+        };
+        for c in ['@', '€', '{', 'c'] {
+            assert_eq!(s.key(Key::Char(c), altgr).command, None);
+        }
+        assert_eq!(s.overlays[0].editing.as_ref().unwrap().text, "@€{c");
     }
 }
