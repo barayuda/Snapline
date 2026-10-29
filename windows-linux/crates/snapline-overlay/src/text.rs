@@ -36,11 +36,13 @@ impl TextFont {
         Self::bundled()
     }
 
-    /// `size` is the em size, as font sizes are on macOS. `ab_glyph`'s own scale is the line height instead.
+    /// `size` is the em size in pixels, as font sizes are on macOS. `ab_glyph`'s own scale is the line height,
+    /// so convert: the line is (ascent − descent) / units-per-em times the em size.
     fn scale(&self, size: f32) -> PxScale {
-        self.0
-            .pt_to_px_scale(size)
-            .unwrap_or_else(|| PxScale::from(size))
+        match self.0.units_per_em() {
+            Some(upem) => PxScale::from(size * self.0.height_unscaled() / upem),
+            None => PxScale::from(size),
+        }
     }
 
     /// Width of `text` and height of one line, in pixels.
@@ -164,5 +166,13 @@ mod tests {
         let mut p = white(50, 20);
         f.draw(&mut p, "Edge", Point { x: -8.0, y: -8.0 }, 24.0, WHITE);
         f.draw(&mut p, "Edge", Point { x: 45.0, y: 15.0 }, 24.0, WHITE);
+    }
+
+    // `size` is the em size in pixels, like a font size in points on macOS: a 100 px line of Outfit is
+    // about 126 px tall (ascent + descent), not 168 (the 96/72 point-to-pixel factor applied twice).
+    #[test]
+    fn size_is_the_em_size_in_pixels() {
+        let height = TextFont::bundled().measure("H", 100.0).height;
+        assert!((115.0..140.0).contains(&height), "line height {height}");
     }
 }
