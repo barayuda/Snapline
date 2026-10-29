@@ -77,7 +77,9 @@ draw, copy and save; uploads, auto-hide and Copy Text come later.
 To try it: open the latest successful **windows-linux** run under Actions, download **snapline-windows**, unzip and
 run `snapline.exe`. It is not signed yet, so Windows SmartScreen asks first (More info → Run anyway).
 
-- Take a screenshot: PrtScn or Ctrl+Shift+1, or the tray icon's menu.
+- Take a screenshot: PrtScn or Ctrl+Shift+1, or the tray icon's menu. If PrtScn opens the Snipping Tool instead,
+  turn off Settings → Accessibility → Keyboard → "Use the Print screen key to open screen capture" and restart
+  Snapline.
 - In the capture: the same keys as on macOS with Ctrl for ⌘. Ctrl+Shift+S is Save As.
 - Settings: `%APPDATA%\Snapline\settings.toml` (`save_directory`, `hotkeys`, `tray_click = "menu"` or `"capture"`).
 

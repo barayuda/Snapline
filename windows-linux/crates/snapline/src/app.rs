@@ -41,6 +41,9 @@ pub struct App {
     tray: Option<TrayIcon>,
     take: MenuId,
     quit: MenuId,
+    why: MenuId,
+    /// Why some shortcuts did not register, shown from the tray menu.
+    shortcut_note: Option<String>,
     hotkeys: Option<GlobalHotKeyManager>,
     capture: Option<Capture>,
     started: bool,
@@ -55,6 +58,8 @@ impl App {
             tray: None,
             take: MenuId::new("take"),
             quit: MenuId::new("quit"),
+            why: MenuId::new("why"),
+            shortcut_note: None,
             hotkeys: None,
             capture: None,
             started: false,
@@ -101,6 +106,7 @@ impl App {
     }
 
     /// Registers every configured shortcut it can, and returns the labels of those that worked.
+    /// When none work, says so at once; when some fail, the tray menu offers the explanation.
     fn register_hotkeys(&mut self) -> Vec<String> {
         let manager = match GlobalHotKeyManager::new() {
             Ok(m) => m,
@@ -111,34 +117,22 @@ impl App {
                 return Vec::new();
             }
         };
-        let working: Vec<String> = self
-            .settings
-            .hotkeys
-            .iter()
-            .filter(|name| {
+        let (working, failed): (Vec<String>, Vec<String>) =
+            self.settings.hotkeys.iter().cloned().partition(|name| {
                 name.parse::<HotKey>()
                     .is_ok_and(|h| manager.register(h).is_ok())
-            })
-            .map(|name| settings::shortcut_label(name))
-            .collect();
-        if working.is_empty() {
-            let wanted: Vec<String> = self
-                .settings
-                .hotkeys
-                .iter()
-                .map(|n| settings::shortcut_label(n))
-                .collect();
-            let file =
-                Settings::path().map_or_else(String::new, |p| format!(" in {}", p.display()));
-            show_error(&format!(
-                "Snapline could not use its capture shortcuts ({}). Another app may be using them. On Windows 11, \
-                 PrtScn often opens the Snipping Tool: turn that off in Settings → Accessibility → Keyboard. \
-                 You can still take a screenshot from the tray icon, or set other keys under hotkeys{file}.",
-                wanted.join(", ")
-            ));
+            });
+        self.shortcut_note = settings::shortcut_note(&failed, &working);
+        if working.is_empty()
+            && let Some(note) = &self.shortcut_note
+        {
+            show_error(note);
         }
         self.hotkeys = Some(manager);
         working
+            .iter()
+            .map(|n| settings::shortcut_label(n))
+            .collect()
     }
 
     fn build_tray(&self, labels: &[String]) -> Result<TrayIcon, String> {
@@ -148,8 +142,21 @@ impl App {
             format!("Take Screenshot\t{}", labels.join(", "))
         };
         let menu = Menu::new();
+        menu.append(&MenuItem::with_id(self.take.clone(), title, true, None))
+            .map_err(|e| e.to_string())?;
+        if self.shortcut_note.is_some() && !labels.is_empty() {
+            let failed: Vec<String> = self
+                .settings
+                .hotkeys
+                .iter()
+                .map(|n| settings::shortcut_label(n))
+                .filter(|l| !labels.contains(l))
+                .collect();
+            let why = format!("Why doesn't {} work?", failed.join(" or "));
+            menu.append(&MenuItem::with_id(self.why.clone(), why, true, None))
+                .map_err(|e| e.to_string())?;
+        }
         menu.append_items(&[
-            &MenuItem::with_id(self.take.clone(), title, true, None),
             &PredefinedMenuItem::separator(),
             &MenuItem::with_id(self.quit.clone(), "Quit Snapline", true, None),
         ])
@@ -297,6 +304,11 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::HotKey => self.open_capture(event_loop),
             UserEvent::Menu(id) if id == self.take => self.open_capture(event_loop),
             UserEvent::Menu(id) if id == self.quit => event_loop.exit(),
+            UserEvent::Menu(id) if id == self.why => {
+                if let Some(note) = &self.shortcut_note {
+                    platform::show_info(note);
+                }
+            }
             UserEvent::Tray(TrayIconEvent::Click {
                 button: tray_icon::MouseButton::Left,
                 button_state: tray_icon::MouseButtonState::Up,

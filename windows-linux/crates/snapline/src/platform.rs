@@ -55,3 +55,13 @@ pub fn show_error(message: &str) {
         .set_buttons(rfd::MessageButtons::Ok)
         .show();
 }
+
+/// An information box (blocks until closed).
+pub fn show_info(message: &str) {
+    rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Info)
+        .set_title("Snapline")
+        .set_description(message)
+        .set_buttons(rfd::MessageButtons::Ok)
+        .show();
+}

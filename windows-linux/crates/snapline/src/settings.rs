@@ -2,6 +2,7 @@
 //! Phase 2 only reads it; the Preferences window (Phase 5) will write it.
 
 use serde::{Deserialize, Serialize};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,6 +66,46 @@ pub fn shortcut_label(name: &str) -> String {
         .replace("Key", "")
 }
 
+/// What to tell the user about capture shortcuts that could not be registered (`None` when all worked).
+/// `failed` and `working` hold shortcut names as in the settings file.
+#[must_use]
+pub fn shortcut_note(failed: &[String], working: &[String]) -> Option<String> {
+    if failed.is_empty() {
+        return None;
+    }
+    let labels = |list: &[String]| {
+        list.iter()
+            .map(|n| shortcut_label(n))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let mut note = format!(
+        "Snapline could not use {}. Another app is using it.",
+        labels(failed)
+    );
+    if failed.iter().any(|n| n == "PrintScreen") {
+        note.push_str(
+            "\n\nOn Windows 11 this is usually the Snipping Tool. To give PrtScn to Snapline, turn off Settings → \
+             Accessibility → Keyboard → \"Use the Print screen key to open screen capture\", then restart Snapline.",
+        );
+    }
+    if working.is_empty() {
+        note.push_str("\n\nYou can still take a screenshot from the tray icon.");
+    } else {
+        let _ = write!(note, "\n\n{} still works.", labels(working));
+    }
+    if let Some(path) = Settings::path() {
+        let _ = write!(
+            note,
+            "
+
+To use other keys, change hotkeys in {}.",
+            path.display()
+        );
+    }
+    Some(note)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,5 +167,38 @@ mod tests {
         assert_eq!(shortcut_label("PrintScreen"), "PrtScn");
         assert_eq!(shortcut_label("Ctrl+Shift+Digit1"), "Ctrl+Shift+1");
         assert_eq!(shortcut_label("Alt+KeyQ"), "Alt+Q");
+    }
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn no_note_when_every_shortcut_works() {
+        assert_eq!(
+            shortcut_note(&[], &names(&["PrintScreen", "Ctrl+Shift+Digit1"])),
+            None
+        );
+    }
+
+    // The common Windows 11 case: the Snipping Tool owns PrtScn, Ctrl+Shift+1 still works.
+    #[test]
+    fn taken_prtscn_is_explained_with_the_snipping_tool_fix() {
+        let note = shortcut_note(&names(&["PrintScreen"]), &names(&["Ctrl+Shift+Digit1"])).unwrap();
+        assert!(
+            note.contains("PrtScn")
+                && note.contains("Snipping Tool")
+                && note.contains("Ctrl+Shift+1"),
+            "{note}"
+        );
+    }
+
+    #[test]
+    fn no_working_shortcut_points_to_the_tray() {
+        let note = shortcut_note(&names(&["Alt+KeyQ"]), &[]).unwrap();
+        assert!(
+            note.contains("Alt+Q") && note.contains("tray icon") && !note.contains("Snipping Tool"),
+            "{note}"
+        );
     }
 }
