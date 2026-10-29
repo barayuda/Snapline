@@ -17,6 +17,9 @@ app, and Preferences. The macOS app stays in Swift and keeps working as it does 
 | Repo layout | `macOS/` (Swift) and `windows-linux/` (Rust) in this repo | One issue tracker; Windows and Linux share almost all Rust code, so they share one workspace |
 | Testing | GitHub Actions builds and runs unit tests on Windows and Linux; Barayuda tries each build on a Windows PC | This Mac cannot run or click through a Windows app |
 | Keeping both apps in step | Shared test cases in `fixtures/`, read by both the Swift and the Rust tests | A detection rule fixed on one platform cannot drift on the other |
+| Overlay drawing | tiny-skia only, no egui in the overlay | One renderer for the screen and the saved image, with pixel tests on CI. Barayuda, 29 Oct 2026 |
+| Default shortcut | PrtScn and Ctrl+Shift+1 | The Lightshot habit plus the macOS keys. Barayuda, 29 Oct 2026 |
+| Drawing colours | A built-in palette of 8 colours | Works the same on Windows and Linux, like Lightshot. Barayuda, 29 Oct 2026 |
 
 ## Repo layout
 
@@ -24,9 +27,9 @@ app, and Preferences. The macOS app stays in Swift and keeps working as it does 
 macOS/                     the macOS app (Swift package, unchanged code)
 windows-linux/             Cargo workspace
   crates/snapline-core/    pure logic, no UI, no OS calls: the Rust twin of SnaplineCore
-  crates/snapline/         the app (from Phase 2): tray, hotkey, capture, overlay, actions
-    src/platform/windows/  Windows-only code (OCR, credentials, capture details)
-    src/platform/linux/    Linux-only code (from Phase 6)
+  crates/snapline-overlay/ the overlay without windows: selection, drawing, text, toolbars, rendering (tiny-skia)
+  crates/snapline/         the app (from Phase 2): tray, hotkey, capture, overlay windows, actions
+    src/platform.rs        Windows-only calls for now; splits into platform/windows and platform/linux when they grow
 fixtures/                  test cases shared by both apps (JSON)
 Assets/, scripts/brand/    brand art and generator, shared
 site/                      website
@@ -37,12 +40,12 @@ site/                      website
 | macOS | Windows | Linux |
 |---|---|---|
 | ScreenCaptureKit | `xcap` (Windows.Graphics.Capture / DXGI); per-monitor DPI aware | X11: `xcap`. Wayland: screenshot portal (`ashpd`) |
-| Overlay (AppKit window per screen) | `winit` borderless topmost window per monitor showing the frozen capture, drawn with `egui` | same; Wayland cannot place windows, so one fullscreen window per output |
-| Drawing (Core Graphics) | `egui` painter on screen; `tiny-skia` to render the final image | same |
+| Overlay (AppKit window per screen) | `winit` borderless topmost window per monitor showing the frozen capture through `softbuffer` | same; Wayland cannot place windows, so one fullscreen window per output |
+| Drawing (Core Graphics) | `tiny-skia` for both the screen and the saved image (one renderer) | same |
 | Vision text recognition | Windows.Media.Ocr (`windows` crate), built into Windows 10/11 | Tesseract (bundled language data) |
 | Vision face detection | Windows.Media.FaceAnalysis.FaceDetector | to be decided in Phase 6 |
-| Carbon hotkey | `global-hotkey` (RegisterHotKey) | X11: `global-hotkey`. Wayland: global shortcuts portal |
-| Menu bar item and popovers | `tray-icon` plus small `egui` popup windows near the tray | same; GNOME needs the AppIndicator extension |
+| Carbon hotkey | `global-hotkey` (RegisterHotKey); PrtScn and Ctrl+Shift+1 by default | X11: `global-hotkey`. Wayland: global shortcuts portal |
+| Menu bar item and popovers | `tray-icon`; popups drawn like the overlay (Phase 3) | same; GNOME needs the AppIndicator extension |
 | Keychain | Credential Manager via `keyring` | Secret Service via `keyring` |
 | URLSession | `reqwest` with rustls | same |
 | Google sign-in on 127.0.0.1 | same flow, `std::net::TcpListener` | same |
@@ -50,7 +53,7 @@ site/                      website
 | Save panel | `rfd` | same |
 | Launch at login | `HKCU\...\Run` registry value | XDG autostart file |
 | Settings (UserDefaults) | TOML file in `%APPDATA%\Snapline\` (`serde`, `toml`) | `~/.config/snapline/` |
-| Preferences (SwiftUI) | `egui` window | same |
+| Preferences (SwiftUI) | a separate `egui` window (Phase 5) | same |
 
 Crate versions are not pinned here. Add each with `cargo add` so the latest stable release is used, and check for
 updates with `cargo outdated` at the start of each phase.
@@ -63,7 +66,8 @@ Each phase ends with something that works on its own and has its own plan in `do
    `macOS/Sources/SnaplineCore/` except `SymbolRepair` (it depends on the OCR engine, so it moves to Phase 4). Shared
    test cases for sensitive text. Plan: [docs/plans/2026-10-28-rust-core.md](plans/2026-10-28-rust-core.md).
 2. **Windows capture and draw.** Tray icon, hotkey, capture every monitor, selection with handles and keyboard
-   moves, all draw tools, undo, copy and save. CI uploads the `.exe` as a build artifact.
+   moves, all draw tools, undo, copy and save. CI uploads the `.exe` as a build artifact. Plan:
+   [docs/plans/2026-10-29-windows-capture-draw.md](plans/2026-10-29-windows-capture-draw.md).
 3. **Uploads.** S3 and Google Drive, credentials in Credential Manager, the upload popup with link, progress and errors.
 4. **Text recognition.** Windows OCR, auto-hide with click-to-reveal, Copy Text with reading order and the review
    popup, face detection, `SymbolRepair` ported and its thresholds retuned for Windows OCR.
@@ -81,5 +85,7 @@ Each phase ends with something that works on its own and has its own plan in `do
 - **OCR quality.** Windows OCR and Tesseract misread different characters than Vision. Auto-hide needs its own test
   images per engine, and on Linux it will miss more.
 - **Multiple monitors with different scaling.** Needs per-monitor DPI awareness from the first Windows build.
+- **PrtScn on Windows 11.** Windows may give PrtScn to the Snipping Tool. Snapline then keeps Ctrl+Shift+1 and
+  explains how to free PrtScn.
 - **SmartScreen.** An unsigned installer shows a warning. Code signing is planned for Phase 5.
 - **Wayland.** Capture and hotkeys depend on portals that not every desktop has.

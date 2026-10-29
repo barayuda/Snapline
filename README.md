@@ -69,6 +69,20 @@ It prints which one it used. Create one of these once:
 After switching, macOS asks for Screen Recording **one last time** (the signature changed). Remove old "Snapline"
 entries from the list with **−**, allow the new one, and from then on rebuilds keep the permission.
 
+## Windows (preview)
+
+The Windows version is in progress (see [docs/windows-linux.md](docs/windows-linux.md)). It can capture, select,
+draw, copy and save; uploads, auto-hide and Copy Text come later.
+
+To try it: open the latest successful **windows-linux** run under Actions, download **snapline-windows**, unzip and
+run `snapline.exe`. It is not signed yet, so Windows SmartScreen asks first (More info → Run anyway).
+
+- Take a screenshot: PrtScn or Ctrl+Shift+1, or the tray icon's menu.
+- In the capture: the same keys as on macOS with Ctrl for ⌘. Ctrl+Shift+S is Save As.
+- Settings: `%APPDATA%\Snapline\settings.toml` (`save_directory`, `hotkeys`, `tray_click = "menu"` or `"capture"`).
+
+To build it: `cd windows-linux && cargo run -p snapline` (it also runs on macOS, for trying the overlay).
+
 ## Use
 
 | Action | How |
@@ -170,6 +184,8 @@ macOS/                        the macOS app (Swift package)
   scripts/make-app.sh         bundle + sign
 windows-linux/                the Windows and Linux app (Rust workspace, in progress)
   crates/snapline-core/       the Rust twin of SnaplineCore
+  crates/snapline-overlay/    the capture overlay without windows: selection, drawing, toolbars (tiny-skia)
+  crates/snapline/            the Windows app: tray, shortcuts, capture, overlay windows, copy and save
 fixtures/                     test cases shared by the Swift and Rust tests
 docs/                         design notes and plans
 scripts/brand/                icon and banner generator, brand fonts (OFL)
