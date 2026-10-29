@@ -1,9 +1,12 @@
 //! Drawing with tiny-skia. The same code draws the overlay on screen and the exported image.
 
 use crate::annotation::{Annotation, Shape};
-use crate::color::{BLACK, Rgb};
+use crate::color::{BLACK, CYAN, INK, Rgb, VIOLET, VIOLET_LIGHT, WHITE};
+use crate::icons;
+use crate::session::Session;
 use crate::text::TextFont;
-use snapline_core::selection_geometry::{Point, Rect};
+use crate::toolbar::{Bar, Button};
+use snapline_core::selection_geometry::{self as geo, Handle, Point, Rect};
 use std::f64::consts::PI;
 use tiny_skia::{
     FillRule, IntRect, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Stroke, Transform,
@@ -190,6 +193,249 @@ pub fn render_selection(
     Some(out)
 }
 
+const HINT: &str = "Drag to select an area   ·   Ctrl+A whole screen   ·   Esc to cancel";
+
+fn rounded(frame: Rect, radius: f32) -> Option<tiny_skia::Path> {
+    let (left, top) = (frame.x as f32, frame.y as f32);
+    let (right, bottom) = (left + frame.width as f32, top + frame.height as f32);
+    let k = radius
+        .min(frame.width as f32 / 2.0)
+        .min(frame.height as f32 / 2.0);
+    let mut pb = PathBuilder::new();
+    pb.move_to(left + k, top);
+    pb.line_to(right - k, top);
+    pb.quad_to(right, top, right, top + k);
+    pb.line_to(right, bottom - k);
+    pb.quad_to(right, bottom, right - k, bottom);
+    pb.line_to(left + k, bottom);
+    pb.quad_to(left, bottom, left, bottom - k);
+    pb.line_to(left, top + k);
+    pb.quad_to(left, top, left + k, top);
+    pb.close();
+    pb.finish()
+}
+
+fn fill_rounded(pixmap: &mut Pixmap, r: Rect, radius: f32, c: Rgb, alpha: u8) {
+    if let Some(path) = rounded(r, radius) {
+        pixmap.fill_path(
+            &path,
+            &paint(c, alpha),
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
+}
+
+fn stroke_rect(pixmap: &mut Pixmap, r: Rect, c: Rgb, alpha: u8, width: f32) {
+    if let Some(path) = sk_rect(r).map(PathBuilder::from_rect) {
+        pixmap.stroke_path(
+            &path,
+            &paint(c, alpha),
+            &stroke(width, LineCap::Butt),
+            Transform::identity(),
+            None,
+        );
+    }
+}
+
+fn grow(r: Rect, by: f64) -> Rect {
+    Rect::new(r.x - by, r.y - by, r.width + 2.0 * by, r.height + 2.0 * by)
+}
+
+/// A pill-shaped label. `at` is its top-left corner, or its centre when `centered`.
+fn badge(
+    pixmap: &mut Pixmap,
+    font: &TextFont,
+    text: &str,
+    at: Point,
+    centered: bool,
+    fill: Rgb,
+    scale: f64,
+) {
+    let size = (12.0 * scale) as f32;
+    let m = font.measure(text, size);
+    let mut r = Rect::new(at.x, at.y, m.width + 16.0 * scale, m.height + 6.0 * scale);
+    if centered {
+        r.x -= r.width / 2.0;
+        r.y -= r.height / 2.0;
+    }
+    fill_rounded(pixmap, r, (r.height / 2.0) as f32, fill, 225);
+    font.draw(
+        pixmap,
+        text,
+        Point {
+            x: r.x + 8.0 * scale,
+            y: r.y + 3.0 * scale,
+        },
+        size,
+        WHITE,
+    );
+}
+
+fn draw_bars(out: &mut Pixmap, session: &Session, i: usize, bars: &[Bar]) {
+    let o = &session.overlays[i];
+    let scale = o.ui_scale;
+    for bar in bars {
+        fill_rounded(out, bar.frame, (8.0 * scale) as f32, INK, 235);
+        for (button, r) in &bar.buttons {
+            if o.hover == Some(*button) {
+                fill_rounded(out, *r, (5.0 * scale) as f32, WHITE, 40);
+            }
+            let active = matches!(button, Button::Tool(t) if session.tool == Some(*t));
+            icons::draw(
+                out,
+                *button,
+                *r,
+                if active { VIOLET_LIGHT } else { WHITE },
+                session.color,
+            );
+        }
+    }
+    let Some(hover) = o.hover else { return };
+    let tip = hover.tip();
+    let Some((bar, button)) = bars.iter().find_map(|b| {
+        b.buttons
+            .iter()
+            .find(|(b, _)| *b == hover)
+            .map(|(_, r)| (b, *r))
+    }) else {
+        return;
+    };
+    if tip.is_empty() {
+        return;
+    }
+    let size = session.font.measure(tip, (12.0 * scale) as f32);
+    let (tip_w, tip_h) = (size.width + 16.0 * scale, size.height + 6.0 * scale);
+    let gap = 4.0 * scale;
+    let bounds = o.bounds();
+    // Horizontal bar: under the button (above when there is no room). Vertical bar: beside the button.
+    let at = if bar.frame.width > bar.frame.height {
+        let below = bar.frame.y + bar.frame.height + gap;
+        let y = if below + tip_h <= bounds.height {
+            below
+        } else {
+            bar.frame.y - tip_h - gap
+        };
+        Point {
+            x: button.x.min(bounds.width - tip_w),
+            y,
+        }
+    } else {
+        let right = bar.frame.x + bar.frame.width + gap;
+        let x = if right + tip_w <= bounds.width {
+            right
+        } else {
+            bar.frame.x - tip_w - gap
+        };
+        Point {
+            x,
+            y: button.y + button.height / 2.0 - tip_h / 2.0,
+        }
+    };
+    let at = Point {
+        x: at.x.max(0.0),
+        y: at.y.max(0.0),
+    };
+    badge(out, &session.font, tip, at, false, INK, scale);
+}
+
+/// Draws what monitor `i` shows during a capture into `out` (same size as that monitor's screen).
+pub fn render_screen(out: &mut Pixmap, session: &Session, i: usize) {
+    let o = &session.overlays[i];
+    let scale = o.ui_scale;
+    out.data_mut().copy_from_slice(o.screen.data());
+    let origin = Point::default();
+    for a in o.annotations.iter().chain(o.current.as_ref()) {
+        draw_annotation(out, a, &session.font, origin);
+    }
+    if let Some(e) = &o.editing {
+        session
+            .font
+            .draw(out, &e.text, e.origin, e.size, session.color);
+        let w = session.font.measure(&e.text, e.size).width;
+        let caret = Rect::new(
+            e.origin.x + w + scale,
+            e.origin.y,
+            2.0 * scale,
+            f64::from(e.size) * 1.2,
+        );
+        fill_rect(out, caret, session.color, 255);
+    }
+
+    let bounds = o.bounds();
+    let mut dim = PathBuilder::new();
+    if let Some(r) = sk_rect(bounds) {
+        dim.push_rect(r);
+    }
+    if let Some(r) = o.selection.and_then(sk_rect) {
+        dim.push_rect(r);
+    }
+    if let Some(path) = dim.finish() {
+        out.fill_path(
+            &path,
+            &paint(BLACK, 115),
+            FillRule::EvenOdd,
+            Transform::identity(),
+            None,
+        );
+    }
+
+    let Some(sel) = o.selection else {
+        if i == session.focused {
+            let centre = Point {
+                x: bounds.width / 2.0,
+                y: bounds.height / 2.0,
+            };
+            badge(out, &session.font, HINT, centre, true, INK, scale);
+        }
+        return;
+    };
+    stroke_rect(
+        out,
+        grow(sel, 2.0 * scale),
+        VIOLET,
+        140,
+        (3.0 * scale) as f32,
+    );
+    stroke_rect(
+        out,
+        grow(sel, 0.75 * scale),
+        CYAN,
+        255,
+        (1.5 * scale) as f32,
+    );
+    if session.tool.is_none() && sel.width > 2.0 * scale {
+        for h in Handle::ALL {
+            let c = geo::handle_point(h, sel);
+            if let Some(path) =
+                PathBuilder::from_circle(c.x as f32, c.y as f32, (4.5 * scale) as f32)
+            {
+                let id = Transform::identity();
+                out.fill_path(&path, &paint(WHITE, 255), FillRule::Winding, id, None);
+                out.stroke_path(
+                    &path,
+                    &paint(VIOLET, 255),
+                    &stroke((2.0 * scale) as f32, LineCap::Round),
+                    id,
+                    None,
+                );
+            }
+        }
+    }
+    let label = format!(
+        "{} × {}",
+        sel.width.round() as i64,
+        sel.height.round() as i64
+    );
+    let at = Point {
+        x: sel.x,
+        y: (sel.y - 26.0 * scale).max(2.0 * scale),
+    };
+    badge(out, &session.font, &label, at, false, VIOLET, scale);
+    draw_bars(out, session, i, &session.bars(i));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -347,5 +593,105 @@ mod tests {
         };
         assert!((10..30).any(|x| (10..35).any(|y| red_at(x, y))));
         assert!(!(40..60).any(|x| (0..50).any(|y| red_at(x, y))));
+    }
+
+    use crate::input::Mods;
+    use crate::session::Session;
+
+    fn screen_session(n: usize) -> Session {
+        Session::new(
+            (0..n).map(|_| (white(400, 300), 1.0)).collect(),
+            TextFont::bundled(),
+        )
+    }
+
+    fn select(s: &mut Session, r: Rect) {
+        let (a, b) = (pt(r.x, r.y), pt(r.x + r.width, r.y + r.height));
+        s.pointer_down(0, a, Mods::default());
+        s.pointer_move(0, b);
+        s.pointer_up(0, b);
+    }
+
+    fn rendered(s: &Session, i: usize) -> Pixmap {
+        let mut out = Pixmap::new(400, 300).unwrap();
+        render_screen(&mut out, s, i);
+        out
+    }
+
+    #[test]
+    fn outside_the_selection_is_dimmed_inside_is_not() {
+        let mut s = screen_session(1);
+        select(&mut s, Rect::new(100.0, 100.0, 150.0, 80.0));
+        let out = rendered(&s, 0);
+        let (r, _, _) = rgb(&out, 30, 250);
+        assert!(
+            (130..=150).contains(&r),
+            "outside should be dimmed to about 140, was {r}"
+        );
+        assert_eq!(rgb(&out, 175, 150), (255, 255, 255));
+    }
+
+    #[test]
+    fn hint_shows_on_the_focused_screen_only() {
+        let s = screen_session(2);
+        let differs = |out: &Pixmap| (150..250).any(|x| rgb(out, x, 150) != rgb(out, 5, 5));
+        assert!(differs(&rendered(&s, 0)));
+        assert!(!differs(&rendered(&s, 1)));
+    }
+
+    #[test]
+    fn handles_show_only_without_a_tool() {
+        let mut s = screen_session(1);
+        select(&mut s, Rect::new(100.0, 100.0, 150.0, 80.0));
+        assert_eq!(
+            rgb(&rendered(&s, 0), 250, 140),
+            (255, 255, 255),
+            "right handle"
+        );
+        s.tool = Some(crate::annotation::Tool::Pencil);
+        assert_ne!(rgb(&rendered(&s, 0), 250, 140), (255, 255, 255));
+    }
+
+    #[test]
+    fn toolbars_are_drawn_next_to_the_selection() {
+        let mut s = screen_session(1);
+        select(&mut s, Rect::new(100.0, 100.0, 150.0, 80.0));
+        let main = s.bars(0)[0].frame;
+        // Top edge, middle: inside the bar's padding, clear of the rounded corners and the icons.
+        let (r, g, b) = rgb(
+            &rendered(&s, 0),
+            (main.x + main.width / 2.0) as u32,
+            (main.y + 2.0) as u32,
+        );
+        assert!(
+            r < 60 && g < 60 && b < 60,
+            "bar background should be dark ink"
+        );
+    }
+
+    #[test]
+    fn rendering_at_the_edges_and_at_scale_two_does_not_panic() {
+        let mut s = Session::new(vec![(white(400, 300), 2.0)], TextFont::bundled());
+        s.select_whole_screen();
+        s.palette_open = true;
+        let mut out = Pixmap::new(400, 300).unwrap();
+        render_screen(&mut out, &s, 0);
+    }
+
+    #[test]
+    fn tooltip_sits_beside_the_hovered_tool() {
+        let mut s = screen_session(1);
+        select(&mut s, Rect::new(60.0, 40.0, 150.0, 80.0));
+        let bars = s.bars(0);
+        let draw = bars[1].frame;
+        let line = bars[1].buttons[1].1;
+        s.pointer_move(0, pt(line.x + 5.0, line.y + 5.0));
+        let out = rendered(&s, 0);
+        let beside = (draw.x + draw.width + 8.0) as u32;
+        let (r, g, b) = rgb(&out, beside, (line.y + line.height / 2.0) as u32);
+        assert!(
+            r < 60 && g < 60 && b < 60,
+            "the tooltip should be right of the bar, on the button's row"
+        );
     }
 }

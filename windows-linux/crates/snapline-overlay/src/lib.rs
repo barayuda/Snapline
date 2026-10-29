@@ -8,6 +8,7 @@
 
 pub mod annotation;
 pub mod color;
+pub mod icons;
 pub mod input;
 pub mod render;
 pub mod session;
