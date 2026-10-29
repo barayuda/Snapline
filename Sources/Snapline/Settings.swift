@@ -21,6 +21,7 @@ enum Key {
     static let driveFolderID = "driveFolderID"
     static let saveDirectory = "saveDirectory"        // folder path for ⌘S
     static let copyShortcutsAsWords = "copyShortcutsAsWords"
+    static let menuBarClick = "menuBarClick"          // "menu" or "capture"
     static let screenPermissionAskedForBuild = "screenPermissionAskedForBuild"
 
     static func autoHide(_ c: SensitiveCategory) -> String { "autoHide.\(c.rawValue)" }
@@ -39,6 +40,7 @@ enum Settings {
             Key.hotKeyDisplay: "⇧⌘1",
             Key.downscaleRetina: false,
             Key.copyShortcutsAsWords: false,
+            Key.menuBarClick: "menu",
             Key.editorAppPath: "/System/Applications/Preview.app",
             Key.autoHideEnabled: true,
             Key.uploadTarget: "s3",

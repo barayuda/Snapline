@@ -70,8 +70,8 @@ entries from the list with **−**, allow the new one, and from then on rebuilds
 
 | Action | How |
 |---|---|
-| Capture | Click the menu bar icon, or press the shortcut (default ⇧⌘1, change it in Preferences) |
-| Menu | Right-click (or ⌃-click) the menu bar icon |
+| Capture | Press the shortcut (default ⇧⌘1, change it in Preferences), or choose Take Screenshot from the menu |
+| Menu | Click the menu bar icon. To make a click capture instead, like Lightshot, set Preferences → General → Clicking the menu bar icon; the menu is then on right-click (or ⌃-click) |
 | Select | Drag; drag inside to move; drag the white handles to resize; ⌘A whole screen |
 | Move / resize by keyboard | Arrows move 1 pt, ⇧ + arrows 10 pt, ⌥ + arrows resize |
 | Draw tools | Toolbar right of the selection, or keys P pencil, L line, A arrow, R rectangle, E ellipse, M marker, T text, H hide area, V back to select |
