@@ -69,9 +69,11 @@ LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchSe
 
 if [[ "${1:-}" == "--install" ]]; then
   # Quit the running copy, replace /Applications/Snapline.app, register it and start it again.
+  # Move, not copy: a second Snapline.app left in build/ shows up in Spotlight and Launchpad.
   pkill -x Snapline 2>/dev/null && sleep 1 || true
   rm -rf /Applications/Snapline.app
-  cp -R "$APP" /Applications/
+  "$LSREGISTER" -u "$APP"
+  mv "$APP" /Applications/
   "$LSREGISTER" -f /Applications/Snapline.app
   open /Applications/Snapline.app
   echo "Installed and started /Applications/Snapline.app"
