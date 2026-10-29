@@ -106,6 +106,46 @@ fn bar(buttons: &[Button], horizontal: bool, origin: Point, s: f64) -> Bar {
     }
 }
 
+fn overlaps(a: Rect, b: Rect) -> bool {
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+}
+
+/// Moves `r` out of `obstacle`: first sideways (left, then right), then up, then down; the first spot
+/// that is on screen and clear wins. Keeps `r` where it is when nothing fits.
+fn step_aside(r: Rect, obstacle: Rect, gap: f64, bounds: Rect) -> Rect {
+    if !overlaps(r, obstacle) {
+        return r;
+    }
+    let candidates = [
+        Rect {
+            x: obstacle.x - r.width - gap,
+            ..r
+        },
+        Rect {
+            x: obstacle.x + obstacle.width + gap,
+            ..r
+        },
+        Rect {
+            y: obstacle.y - r.height - gap,
+            ..r
+        },
+        Rect {
+            y: obstacle.y + obstacle.height + gap,
+            ..r
+        },
+    ];
+    let on_screen = |c: &Rect| {
+        c.x >= bounds.x
+            && c.y >= bounds.y
+            && c.x + c.width <= bounds.x + bounds.width
+            && c.y + c.height <= bounds.y + bounds.height
+    };
+    candidates
+        .into_iter()
+        .find(|c| on_screen(c) && !overlaps(*c, obstacle))
+        .unwrap_or(r)
+}
+
 /// Keeps `v` in `0..=limit`, even when the bar is larger than the screen.
 fn fit(v: f64, limit: f64) -> f64 {
     v.min(limit).max(0.0)
@@ -148,6 +188,19 @@ pub fn layout(sel: Rect, bounds: Rect, s: f64, palette_open: bool) -> Vec<Bar> {
     draw_at.x = fit(draw_at.x, right - draw.width);
     draw_at.y = fit(draw_at.y, bottom - draw.height);
 
+    // At a corner the draw bar can flip onto the main bar; a click would then hit the bar underneath.
+    let draw_frame = Rect::new(draw_at.x, draw_at.y, draw.width, draw.height);
+    let main_frame = step_aside(
+        Rect::new(main_at.x, main_at.y, main.width, main.height),
+        draw_frame,
+        gap,
+        bounds,
+    );
+    let main_at = Point {
+        x: main_frame.x,
+        y: main_frame.y,
+    };
+
     let mut bars = vec![
         bar(&MAIN_BAR, true, main_at, s),
         bar(&DRAW_BAR, false, draw_at, s),
@@ -164,11 +217,27 @@ pub fn layout(sel: Rect, bounds: Rect, s: f64, palette_open: bool) -> Vec<Bar> {
         if x < 0.0 {
             x = draw_at.x + draw.width + gap;
         }
-        let p = Point {
-            x: fit(x, right - size.width),
-            y: fit(color_y, bottom - size.height),
-        };
-        bars.push(bar(&swatches, true, p, s));
+        let frame = Rect::new(
+            fit(x, right - size.width),
+            fit(color_y, bottom - size.height),
+            size.width,
+            size.height,
+        );
+        let frame = step_aside(
+            step_aside(frame, main_frame, gap, bounds),
+            draw_frame,
+            gap,
+            bounds,
+        );
+        bars.push(bar(
+            &swatches,
+            true,
+            Point {
+                x: frame.x,
+                y: frame.y,
+            },
+            s,
+        ));
     }
     bars
 }
@@ -258,5 +327,37 @@ mod tests {
         );
         assert_eq!(hit(&bars, Point { x: 150.0, y: 150.0 }), None);
         assert_eq!(bars.len(), 3, "the palette is the third bar when open");
+    }
+
+    // A click on one bar must never land on another bar drawn underneath (review finding: corner selections).
+    #[test]
+    fn bars_never_overlap() {
+        for scale in [1.0, 1.5, 2.0] {
+            for (x, y, w, h) in [
+                (940.0, 700.0, 50.0, 90.0),
+                (950.0, 760.0, 50.0, 40.0),
+                (0.0, 0.0, 1000.0, 800.0),
+                (0.0, 760.0, 60.0, 40.0),
+                (900.0, 0.0, 100.0, 60.0),
+                (400.0, 300.0, 200.0, 100.0),
+                (980.0, 400.0, 20.0, 20.0),
+            ] {
+                for palette in [false, true] {
+                    let bars = layout(Rect::new(x, y, w, h), SCREEN, scale, palette);
+                    for (k, a) in bars.iter().enumerate() {
+                        for b in &bars[k + 1..] {
+                            assert!(
+                                !overlaps(a.frame, b.frame),
+                                "{:?} overlaps {:?} for selection {:?} at scale {scale}",
+                                a.frame,
+                                b.frame,
+                                (x, y, w, h)
+                            );
+                        }
+                        assert!(inside(a.frame, SCREEN), "{:?} off screen", a.frame);
+                    }
+                }
+            }
+        }
     }
 }
