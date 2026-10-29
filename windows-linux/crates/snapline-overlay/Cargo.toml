@@ -9,4 +9,6 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+ab_glyph = "0.2.32"
 snapline-core = { path = "../snapline-core" }
+tiny-skia = "0.12.0"

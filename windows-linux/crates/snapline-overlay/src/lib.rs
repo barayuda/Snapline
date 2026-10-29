@@ -8,5 +8,7 @@
 
 pub mod annotation;
 pub mod color;
+pub mod text;
 
 pub use snapline_core::selection_geometry::{Handle, Point, Rect, Size};
+pub use tiny_skia;
