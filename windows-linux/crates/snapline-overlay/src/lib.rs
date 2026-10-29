@@ -8,7 +8,9 @@
 
 pub mod annotation;
 pub mod color;
+pub mod input;
 pub mod render;
+pub mod session;
 pub mod text;
 
 pub use snapline_core::selection_geometry::{Handle, Point, Rect, Size};
