@@ -21,7 +21,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
-        statusItem.button?.setAccessibilityHelp("Click to take a screenshot. Right-click or Control-click for the menu.")
         refreshMenu()
 
         HotKey.shared.onPress = { [weak self] in self?.startCapture() }
@@ -63,17 +62,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Snapline", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         menu.items.filter { $0.action != #selector(NSApplication.terminate(_:)) }.forEach { $0.target = self }
+        statusItem.button?.setAccessibilityHelp(clickCaptures
+            ? "Click to take a screenshot. Right-click or Control-click for the menu."
+            : "Click to open the Snapline menu.")
     }
 
-    /// Left click captures, right click (or ⌃-click) opens the menu, like Lightshot.
+    /// Whether a plain click on the icon captures (like Lightshot) instead of opening the menu. Set in Preferences.
+    private var clickCaptures: Bool { UserDefaults.standard.string(forKey: Key.menuBarClick) == "capture" }
+
+    /// Right click (or ⌃-click) always opens the menu. A plain click opens it too, unless Preferences says capture.
     @objc private func statusItemClicked() {
         let event = NSApp.currentEvent
-        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+        let menuClick = event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true
+        if menuClick || (!clickCaptures && !StatusPopover.isShowingPanel) {
             statusItem.menu = menu
             statusItem.button?.performClick(nil)
             statusItem.menu = nil
         } else if StatusPopover.isShowingPanel {
-            StatusPopover.close()   // clicking the icon closes Preferences or the review instead of capturing
+            StatusPopover.close()   // clicking the icon closes Preferences or the review instead
         } else {
             startCapture()
         }

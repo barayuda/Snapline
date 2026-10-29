@@ -96,6 +96,7 @@ private struct GeneralTab: View {
     @AppStorage(Key.hotKeyDisplay) private var hotKeyDisplay = "⇧⌘1"
     @AppStorage(Key.downscaleRetina) private var downscaleRetina = false
     @AppStorage(Key.copyShortcutsAsWords) private var copyShortcutsAsWords = false
+    @AppStorage(Key.menuBarClick) private var menuBarClick = "menu"
     @AppStorage(Key.editorAppPath) private var editorAppPath = "/System/Applications/Preview.app"
     @AppStorage(Key.saveDirectory) private var saveDirectory = Settings.saveDirectory.path
     @State private var recording = false
@@ -116,6 +117,12 @@ private struct GeneralTab: View {
                 }
             }
             if let hotKeyError { Text(hotKeyError).foregroundStyle(.red).font(.caption) }
+
+            Picker("Clicking the menu bar icon", selection: $menuBarClick) {
+                Text("Opens the menu").tag("menu")
+                Text("Takes a screenshot").tag("capture")
+            }
+            .onChange(of: menuBarClick) { AppDelegate.shared?.refreshMenu() }
 
             LabeledContent("Save screenshots to") {
                 HStack {
