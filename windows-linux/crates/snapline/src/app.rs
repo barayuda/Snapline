@@ -18,7 +18,7 @@ use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use winit::application::ApplicationHandler;
 use winit::event::{MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
-use winit::keyboard::{Key as WinitKey, NamedKey};
+use winit::keyboard::{Key as WinitKey, NamedKey, PhysicalKey};
 use winit::window::{CursorIcon, WindowId};
 
 pub enum UserEvent {
@@ -276,7 +276,16 @@ fn cursor_icon(kind: CursorKind) -> CursorIcon {
     }
 }
 
-fn key_of(key: &WinitKey) -> Option<Key> {
+/// The overlay key for a key press. With Ctrl held on a non-Latin layout (Ctrl+С on Russian), the letter comes
+/// from the key's position, so Ctrl shortcuts work on every layout. Latin layouts keep their own letters (AZERTY).
+fn key_of(key: &WinitKey, physical: PhysicalKey, ctrl: bool) -> Option<Key> {
+    if ctrl
+        && let WinitKey::Character(s) = key
+        && s.chars().next().is_some_and(|c| !c.is_ascii())
+        && let Some(letter) = latin_letter(physical)
+    {
+        return Some(Key::Char(letter));
+    }
     Some(match key {
         WinitKey::Named(NamedKey::Escape) => Key::Escape,
         WinitKey::Named(NamedKey::Enter) => Key::Enter,
@@ -289,6 +298,20 @@ fn key_of(key: &WinitKey) -> Option<Key> {
         WinitKey::Character(s) => Key::Char(s.chars().next()?),
         _ => return None,
     })
+}
+
+/// The QWERTY letter printed on a key position, for Ctrl shortcuts.
+fn latin_letter(physical: PhysicalKey) -> Option<char> {
+    let PhysicalKey::Code(code) = physical else {
+        return None;
+    };
+    let name = format!("{code:?}"); // "KeyC"
+    let letter = name.strip_prefix("Key")?;
+    let mut chars = letter.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None) => Some(c.to_ascii_lowercase()),
+        _ => None,
+    }
 }
 
 impl ApplicationHandler<UserEvent> for App {
@@ -376,7 +399,7 @@ impl ApplicationHandler<UserEvent> for App {
                 cap.session.scroll(i, cap.pointer[i], lines)
             }
             WindowEvent::KeyboardInput { event, .. } if event.state.is_pressed() => {
-                match key_of(&event.logical_key) {
+                match key_of(&event.logical_key, event.physical_key, cap.mods.ctrl) {
                     Some(key) => cap.session.key(key, cap.mods),
                     None => return,
                 }
@@ -385,5 +408,45 @@ impl ApplicationHandler<UserEvent> for App {
             _ => return,
         };
         self.apply(i, effect);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use winit::keyboard::KeyCode;
+
+    fn char_key(s: &str) -> WinitKey {
+        WinitKey::Character(s.into())
+    }
+
+    // Review finding: on Russian or Greek layouts Ctrl+C reports "с", so the shortcut must come from the key position.
+    #[test]
+    fn ctrl_shortcuts_work_on_non_latin_layouts() {
+        assert_eq!(
+            key_of(&char_key("с"), PhysicalKey::Code(KeyCode::KeyC), true),
+            Some(Key::Char('c'))
+        );
+        assert_eq!(
+            key_of(&char_key("ς"), PhysicalKey::Code(KeyCode::KeyW), true),
+            Some(Key::Char('w'))
+        );
+    }
+
+    #[test]
+    fn latin_layouts_keep_their_own_letters() {
+        // AZERTY: the A key sits where QWERTY has Q; Ctrl+A must still select all.
+        assert_eq!(
+            key_of(&char_key("a"), PhysicalKey::Code(KeyCode::KeyQ), true),
+            Some(Key::Char('a'))
+        );
+    }
+
+    #[test]
+    fn typing_without_ctrl_keeps_the_character() {
+        assert_eq!(
+            key_of(&char_key("с"), PhysicalKey::Code(KeyCode::KeyC), false),
+            Some(Key::Char('с'))
+        );
     }
 }
