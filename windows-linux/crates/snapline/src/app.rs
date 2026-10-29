@@ -23,6 +23,8 @@ use winit::window::{CursorIcon, WindowId};
 
 pub enum UserEvent {
     HotKey,
+    /// Capture after the tray menu has faded out (sent shortly after a menu click).
+    CaptureNow,
     Menu(MenuId),
     Tray(TrayIconEvent),
 }
@@ -200,9 +202,8 @@ impl App {
                 }
             }
         }
-        let scales: Vec<f64> = windows.iter().map(|w| w.window.scale_factor()).collect();
         let session = Session::new(
-            screens.into_iter().map(|s| s.image).zip(scales).collect(),
+            screens.into_iter().map(|s| (s.image, s.scale)).collect(),
             self.font.clone(),
         );
         let n = windows.len();
@@ -224,6 +225,7 @@ impl App {
             if let Err(e) = w.present(&cap.session, k) {
                 eprintln!("Snapline: {e}");
             }
+            w.fit_to_monitor();
             w.window.set_visible(true);
             w.window.set_cursor(CursorIcon::Crosshair);
         }
@@ -324,8 +326,15 @@ impl ApplicationHandler<UserEvent> for App {
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
-            UserEvent::HotKey => self.open_capture(event_loop),
-            UserEvent::Menu(id) if id == self.take => self.open_capture(event_loop),
+            UserEvent::HotKey | UserEvent::CaptureNow => self.open_capture(event_loop),
+            UserEvent::Menu(id) if id == self.take => {
+                // Windows fades the clicked menu item out; capturing at once would put it in the image.
+                let proxy = self.proxy.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                    let _ = proxy.send_event(UserEvent::CaptureNow);
+                });
+            }
             UserEvent::Menu(id) if id == self.quit => event_loop.exit(),
             UserEvent::Menu(id) if id == self.why => {
                 if let Some(note) = &self.shortcut_note {
@@ -361,6 +370,7 @@ impl ApplicationHandler<UserEvent> for App {
                 ..
             } => {
                 let _ = inner_size_writer.request_inner_size(cap.windows[i].size());
+                cap.windows[i].fit_to_monitor();
                 return;
             }
             WindowEvent::ModifiersChanged(m) => {

@@ -15,6 +15,8 @@ pub struct OverlayWindow {
     _context: softbuffer::Context<Rc<Window>>,
     surface: softbuffer::Surface<Rc<Window>, Rc<Window>>,
     frame: Pixmap,
+    /// Where the monitor starts on the virtual desktop, in physical pixels.
+    origin: PhysicalPosition<i32>,
 }
 
 impl OverlayWindow {
@@ -47,12 +49,23 @@ impl OverlayWindow {
             .ok_or("empty monitor")?;
         surface.resize(nw, nh).map_err(|e| e.to_string())?;
         let frame = Pixmap::new(w, h).ok_or("empty monitor")?;
-        Ok(Self {
+        let origin = PhysicalPosition::new(screen.x, screen.y);
+        let overlay = Self {
             window,
             _context: context,
             surface,
             frame,
-        })
+            origin,
+        };
+        // Creating the window on a monitor with another scale makes Windows resize and move it; put it back.
+        overlay.fit_to_monitor();
+        Ok(overlay)
+    }
+
+    /// Puts the window exactly over its monitor again (after Windows rescaled or moved it).
+    pub fn fit_to_monitor(&self) {
+        let _ = self.window.request_inner_size(self.size());
+        self.window.set_outer_position(self.origin);
     }
 
     pub fn size(&self) -> PhysicalSize<u32> {

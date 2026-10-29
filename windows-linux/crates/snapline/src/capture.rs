@@ -6,6 +6,8 @@ pub struct Screen {
     /// Top-left corner on the virtual desktop, in physical pixels.
     pub x: i32,
     pub y: i32,
+    /// Pixels per point on this monitor, from Windows (not from our window, which may not have moved there yet).
+    pub scale: f64,
     pub image: Pixmap,
 }
 
@@ -25,6 +27,7 @@ pub fn capture_all() -> Result<Vec<Screen>, String> {
             Ok(Screen {
                 x: m.x().map_err(|e| e.to_string())?,
                 y: m.y().map_err(|e| e.to_string())?,
+                scale: f64::from(m.scale_factor().map_err(|e| e.to_string())?),
                 image,
             })
         })
