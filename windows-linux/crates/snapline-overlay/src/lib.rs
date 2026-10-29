@@ -12,6 +12,7 @@ pub mod input;
 pub mod render;
 pub mod session;
 pub mod text;
+pub mod toolbar;
 
 pub use snapline_core::selection_geometry::{Handle, Point, Rect, Size};
 pub use tiny_skia;

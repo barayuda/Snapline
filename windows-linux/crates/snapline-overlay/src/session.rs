@@ -6,6 +6,7 @@ use crate::color::{PALETTE, Rgb};
 use crate::input::{Key, Mods};
 use crate::render;
 use crate::text::TextFont;
+use crate::toolbar::{self, Bar, Button};
 use snapline_core::selection_geometry::{self as geo, Handle, Point, Rect};
 use tiny_skia::Pixmap;
 
@@ -127,6 +128,8 @@ pub struct Overlay {
     pub editing: Option<TextEdit>,
     /// Last pointer position.
     pub pointer: Point,
+    /// The toolbar button under the pointer.
+    pub hover: Option<Button>,
     drag: Drag,
     down: Point,
     did_drag: bool,
@@ -142,6 +145,7 @@ impl Overlay {
             current: None,
             editing: None,
             pointer: Point::default(),
+            hover: None,
             drag: Drag::None,
             down: Point::default(),
             did_drag: false,
@@ -248,10 +252,71 @@ impl Session {
         }
     }
 
+    /// The toolbars of overlay `i`: shown for a usable selection while nothing is being dragged.
+    #[must_use]
+    pub fn bars(&self, i: usize) -> Vec<Bar> {
+        let o = &self.overlays[i];
+        match o.selection {
+            Some(sel)
+                if sel.width > 2.0 * o.ui_scale
+                    && sel.height > 2.0 * o.ui_scale
+                    && !o.is_dragging() =>
+            {
+                toolbar::layout(sel, o.bounds(), o.ui_scale, self.palette_open)
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn press(&mut self, button: Button, mods: Mods) -> Effect {
+        if !matches!(button, Button::Color | Button::Swatch(_)) {
+            self.palette_open = false;
+        }
+        match button {
+            Button::Tool(t) => {
+                self.commit_text();
+                self.tool = if self.tool == Some(t) { None } else { Some(t) };
+                Effect::all()
+            }
+            Button::Color => {
+                self.palette_open = !self.palette_open;
+                Effect::all()
+            }
+            Button::Swatch(k) => {
+                self.color = PALETTE[k];
+                self.palette_open = false;
+                Effect::all()
+            }
+            Button::Undo => self.undo(),
+            Button::Copy => self.request(Command::Copy),
+            Button::Save => self.request(if mods.shift {
+                Command::SaveAs
+            } else {
+                Command::Save
+            }),
+            Button::Close => Effect::command(Command::Cancel),
+        }
+    }
+
+    /// Redraws only when the pointer moves onto or off a button (for the tooltip and highlight).
+    fn hover(&mut self, i: usize, p: Point) -> Effect {
+        let hit = toolbar::hit(&self.bars(i), p);
+        let o = &mut self.overlays[i];
+        if o.hover == hit {
+            Effect::NONE
+        } else {
+            o.hover = hit;
+            Effect::one(i)
+        }
+    }
+
     pub fn pointer_down(&mut self, i: usize, p: Point, mods: Mods) -> Effect {
-        let _ = mods; // Task 6 uses it for Shift-click on Save
         self.focused = i;
         let p = self.overlays[i].clamp(p);
+        if let Some(button) = toolbar::hit(&self.bars(i), p) {
+            return self.press(button, mods);
+        }
+        self.palette_open = false;
         self.commit_text();
         let scale = self.overlays[i].ui_scale;
         let action = match self.overlays[i].usable_selection() {
@@ -325,7 +390,7 @@ impl Session {
             o.did_drag = true;
         }
         match o.drag {
-            Drag::None => return Effect::NONE,
+            Drag::None => return self.hover(i, p),
             Drag::Selecting(start) => o.selection = Some(geo::rect(start, p)),
             Drag::Moving(start, original) => {
                 o.selection = Some(geo::move_within(
@@ -550,6 +615,9 @@ impl Session {
         let p = o.pointer;
         if o.editing.is_some() {
             return CursorKind::Text;
+        }
+        if toolbar::hit(&self.bars(i), p).is_some() {
+            return CursorKind::Arrow;
         }
         let Some(sel) = o.usable_selection() else {
             return CursorKind::Crosshair;
@@ -913,5 +981,66 @@ pub(crate) mod tests {
             assert_eq!(s.key(Key::Char(c), altgr).command, None);
         }
         assert_eq!(s.overlays[0].editing.as_ref().unwrap().text, "@€{c");
+    }
+
+    use crate::toolbar::{self, Button};
+
+    fn click_button(s: &mut Session, button: Button, mods: Mods) -> Effect {
+        let bars = s.bars(0);
+        let r = bars
+            .iter()
+            .flat_map(|b| b.buttons.iter())
+            .find(|(b, _)| *b == button)
+            .unwrap()
+            .1;
+        let p = pt(r.x + r.width / 2.0, r.y + r.height / 2.0);
+        let effect = s.pointer_down(0, p, mods);
+        s.pointer_up(0, p);
+        effect
+    }
+
+    #[test]
+    fn toolbar_buttons_work_and_do_not_touch_the_selection() {
+        let mut s = selected(1.0);
+        let before = s.overlays[0].selection;
+        click_button(&mut s, Button::Tool(Tool::Pencil), Mods::default());
+        assert_eq!(s.tool, Some(Tool::Pencil));
+        assert_eq!(s.overlays[0].selection, before);
+        assert_eq!(
+            click_button(&mut s, Button::Copy, Mods::default()).command,
+            Some(Command::Copy)
+        );
+        let shift = Mods {
+            shift: true,
+            ..Mods::default()
+        };
+        assert_eq!(
+            click_button(&mut s, Button::Save, shift).command,
+            Some(Command::SaveAs)
+        );
+        assert_eq!(
+            click_button(&mut s, Button::Close, Mods::default()).command,
+            Some(Command::Cancel)
+        );
+    }
+
+    #[test]
+    fn the_palette_opens_and_picks_a_colour() {
+        let mut s = selected(1.0);
+        click_button(&mut s, Button::Color, Mods::default());
+        assert!(s.palette_open);
+        click_button(&mut s, Button::Swatch(4), Mods::default());
+        assert_eq!(s.color, crate::color::PALETTE[4]);
+        assert!(!s.palette_open);
+    }
+
+    #[test]
+    fn toolbars_hide_while_dragging() {
+        let mut s = selected(1.0);
+        assert_eq!(s.bars(0).len(), 2);
+        s.pointer_down(0, pt(50.0, 30.0), Mods::default());
+        assert_eq!(s.bars(0), []);
+        s.pointer_up(0, pt(50.0, 30.0));
+        assert_eq!(s.bars(0)[0].buttons.len(), toolbar::MAIN_BAR.len());
     }
 }
