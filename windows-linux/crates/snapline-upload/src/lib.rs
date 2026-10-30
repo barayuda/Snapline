@@ -7,6 +7,7 @@
 )] // progress fractions
 
 pub mod error;
+pub mod google;
 pub mod http;
 pub mod s3;
 
