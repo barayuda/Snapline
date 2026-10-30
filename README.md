@@ -72,7 +72,7 @@ entries from the list with **−**, allow the new one, and from then on rebuilds
 ## Windows (preview)
 
 The Windows version is in progress (see [docs/windows-linux.md](docs/windows-linux.md)). It can capture, select,
-draw, copy and save; uploads, auto-hide and Copy Text come later.
+draw, copy, save and upload; auto-hide and Copy Text come later.
 
 To try it: open the latest successful **windows-linux** run under Actions, download **snapline-windows**, unzip and
 run `snapline.exe`. It is not signed yet, so Windows SmartScreen asks first (More info → Run anyway).
@@ -81,6 +81,9 @@ run `snapline.exe`. It is not signed yet, so Windows SmartScreen asks first (Mor
   turn off Settings → Accessibility → Keyboard → "Use the Print screen key to open screen capture" and restart
   Snapline.
 - In the capture: the same keys as on macOS with Ctrl for ⌘. Ctrl+Shift+S is Save As.
+- Upload: Ctrl+D or the Upload button. Set the bucket or Google Drive in the tray menu → **Upload Settings…** (the same
+  fields as on macOS; keys are kept in Windows Credential Manager). The link is copied when the upload finishes.
+- Search similar images: the magnifier button, then Google Lens or TinEye.
 - Settings: `%APPDATA%\Snapline\settings.toml` (`save_directory`, `hotkeys`, `tray_click = "menu"` or `"capture"`).
 
 To build it: `cd windows-linux && cargo run -p snapline` (it also runs on macOS, for trying the overlay).
@@ -187,7 +190,8 @@ macOS/                        the macOS app (Swift package)
 windows-linux/                the Windows and Linux app (Rust workspace, in progress)
   crates/snapline-core/       the Rust twin of SnaplineCore
   crates/snapline-overlay/    the capture overlay without windows: selection, drawing, toolbars (tiny-skia)
-  crates/snapline/            the Windows app: tray, shortcuts, capture, overlay windows, copy and save
+  crates/snapline-upload/     uploads without UI or storage: S3, Google Drive, Google sign-in
+  crates/snapline/            the Windows app: tray, shortcuts, capture, overlay windows, copy, save, uploads
 fixtures/                     test cases shared by the Swift and Rust tests
 docs/                         design notes and plans
 scripts/brand/                icon and banner generator, brand fonts (OFL)
