@@ -8,6 +8,7 @@
 
 pub mod error;
 pub mod http;
+pub mod s3;
 
 /// Where an upload ended up.
 #[derive(Clone, Debug, PartialEq, Eq)]
