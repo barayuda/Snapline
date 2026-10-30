@@ -116,3 +116,31 @@ pub fn open_upload_settings() {
         Err(e) => show_error(&format!("Snapline could not open its upload settings: {e}")),
     }
 }
+
+/// Keeps a popup from ever taking the focus or showing in Alt+Tab (`with_active(false)` covers only the first show).
+#[cfg(windows)]
+pub fn never_activate(window: &winit::window::Window) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GWL_EXSTYLE, GetWindowLongPtrW, SetWindowLongPtrW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    };
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let Ok(handle) = window.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::Win32(win32) = handle.as_raw() else {
+        return;
+    };
+    let hwnd = win32.hwnd.get() as windows_sys::Win32::Foundation::HWND;
+    // SAFETY: `hwnd` is the live window winit just created; only extended style bits are added.
+    unsafe {
+        let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        SetWindowLongPtrW(
+            hwnd,
+            GWL_EXSTYLE,
+            style | (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) as isize,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+pub fn never_activate(_window: &winit::window::Window) {}

@@ -65,6 +65,8 @@ pub struct App {
     popup: Option<(Popup, PopupWindow)>,
     popup_close_at: Option<Instant>,
     popup_hovered: bool,
+    /// Where the pointer last was over the popup, for clicks right after the popup changed under it.
+    popup_pointer: Option<Point>,
     icon_reset_at: Option<Instant>,
     /// The last upload, for Try again and the search that follows it.
     last_job: Option<Job>,
@@ -91,6 +93,7 @@ impl App {
             popup: None,
             popup_close_at: None,
             popup_hovered: false,
+            popup_pointer: None,
             icon_reset_at: None,
             last_job: None,
             uploading: false,
@@ -489,7 +492,7 @@ impl App {
             },
         };
         self.popup = Some((model, window));
-        self.popup_hovered = false;
+        // The pointer may still be over the popup: keep it, so a click on the new buttons works at once.
         self.redraw_popup();
         self.popup_close_at =
             close_after.map(|seconds| Instant::now() + Duration::from_secs_f64(seconds));
@@ -507,6 +510,7 @@ impl App {
         self.popup = None;
         self.popup_close_at = None;
         self.popup_hovered = false;
+        self.popup_pointer = None;
     }
 
     fn popup_event(&mut self, event_loop: &ActiveEventLoop, event: &WindowEvent) {
@@ -514,15 +518,13 @@ impl App {
             WindowEvent::RedrawRequested => self.redraw_popup(),
             WindowEvent::CursorMoved { position, .. } => {
                 self.popup_hovered = true;
+                let point = Point {
+                    x: position.x,
+                    y: position.y,
+                };
+                self.popup_pointer = Some(point);
                 if let Some((popup, window)) = &mut self.popup {
-                    let hit = popup.hit(
-                        &self.font,
-                        window.scale,
-                        Point {
-                            x: position.x,
-                            y: position.y,
-                        },
-                    );
+                    let hit = popup.hit(&self.font, window.scale, point);
                     if popup.hover != hit {
                         popup.hover = hit;
                         window.window.request_redraw();
@@ -531,6 +533,7 @@ impl App {
             }
             WindowEvent::CursorLeft { .. } => {
                 self.popup_hovered = false;
+                self.popup_pointer = None;
                 if let Some((popup, window)) = &mut self.popup {
                     popup.hover = None;
                     window.window.request_redraw();
@@ -545,7 +548,11 @@ impl App {
                 button: MouseButton::Left,
                 ..
             } if state.is_pressed() => {
-                if let Some(button) = self.popup.as_ref().and_then(|(p, _)| p.hover) {
+                // Hit-test where the pointer is now: the popup may have changed under a pointer that did not move.
+                let pressed = self.popup.as_ref().zip(self.popup_pointer).and_then(
+                    |((popup, window), point)| popup.hit(&self.font, window.scale, point),
+                );
+                if let Some(button) = pressed {
                     self.popup_button(button, event_loop);
                 }
             }

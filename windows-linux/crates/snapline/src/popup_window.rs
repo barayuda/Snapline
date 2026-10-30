@@ -44,6 +44,7 @@ impl PopupWindow {
                 .create_window(attributes)
                 .map_err(|e| e.to_string())?,
         );
+        crate::platform::never_activate(&window);
         let context = softbuffer::Context::new(window.clone()).map_err(|e| e.to_string())?;
         let surface =
             softbuffer::Surface::new(&context, window.clone()).map_err(|e| e.to_string())?;
