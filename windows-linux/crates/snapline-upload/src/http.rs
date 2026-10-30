@@ -93,7 +93,15 @@ pub fn send_ok(
     }
 }
 
-/// The real transport: ureq with rustls. Two minutes per request, so a dead network never hangs the app.
+/// How long one request may take: a minute, plus time to send the body at 32 KB/s (a slow hotel or phone link).
+/// A dead network still ends with an error; a big screenshot on a slow link still gets through.
+#[must_use]
+pub fn time_limit(body_len: usize) -> Duration {
+    Duration::from_secs(60 + (body_len / (32 * 1024)) as u64)
+}
+
+/// The real transport: ureq with rustls. Each request has a time limit (see `time_limit`), so a dead network
+/// never hangs the app.
 pub struct UreqTransport(ureq::Agent);
 
 impl Default for UreqTransport {
@@ -107,7 +115,7 @@ impl UreqTransport {
     pub fn new() -> Self {
         let config = ureq::Agent::config_builder()
             .http_status_as_error(false)
-            .timeout_global(Some(Duration::from_secs(120)))
+            .timeout_connect(Some(Duration::from_secs(15)))
             .user_agent("Snapline")
             .build();
         Self(config.into())
@@ -133,8 +141,13 @@ impl Read for Progress<'_> {
 impl Transport for UreqTransport {
     fn send(&self, request: &Request, progress: &dyn Fn(f64)) -> Result<Response, UploadError> {
         let host = request.url.host_str().unwrap_or("the server").to_owned();
-        let unreachable =
-            |e: ureq::Error| UploadError::message(format!("Snapline could not reach {host}: {e}"));
+        let unreachable = |e: ureq::Error| match e {
+            ureq::Error::Timeout(_) => UploadError::message(format!(
+                "The upload to {host} timed out. Check the connection and try again."
+            )),
+            e => UploadError::message(format!("Snapline could not reach {host}: {e}")),
+        };
+        let limit = Some(time_limit(request.body.len()));
         let mut builder = ureq::http::Request::builder()
             .method(request.method.as_str())
             .uri(request.url.as_str());
@@ -145,7 +158,9 @@ impl Transport for UreqTransport {
             let r = builder
                 .body(())
                 .map_err(|e| UploadError::message(e.to_string()))?;
-            self.0.run(r).map_err(unreachable)?
+            self.0
+                .run(self.0.configure_request(r).timeout_global(limit).build())
+                .map_err(unreachable)?
         } else {
             // An explicit length, so S3 gets Content-Length rather than chunked encoding.
             builder = builder.header("Content-Length", request.body.len().to_string());
@@ -157,7 +172,9 @@ impl Transport for UreqTransport {
             let r = builder
                 .body(ureq::SendBody::from_reader(&mut reader))
                 .map_err(|e| UploadError::message(e.to_string()))?;
-            self.0.run(r).map_err(unreachable)?
+            self.0
+                .run(self.0.configure_request(r).timeout_global(limit).build())
+                .map_err(unreachable)?
         };
         progress(1.0);
         let status = response.status().as_u16();
@@ -322,5 +339,13 @@ mod tests {
             "Test failed (HTTP 500). boom"
         );
         assert_eq!(fake.requests().len(), 2);
+    }
+
+    // Review finding: a fixed 120 s limit failed big screenshots on slow links.
+    #[test]
+    fn time_limit_grows_with_the_upload() {
+        assert_eq!(time_limit(0), Duration::from_secs(60));
+        let twenty_mb = time_limit(20 * 1024 * 1024);
+        assert!(twenty_mb >= Duration::from_mins(11), "{twenty_mb:?}");
     }
 }
