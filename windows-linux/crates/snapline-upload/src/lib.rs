@@ -6,6 +6,7 @@
     clippy::cast_precision_loss
 )] // progress fractions
 
+pub mod drive;
 pub mod error;
 pub mod google;
 pub mod http;
