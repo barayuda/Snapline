@@ -215,7 +215,7 @@ fn rounded(frame: Rect, radius: f32) -> Option<tiny_skia::Path> {
     pb.finish()
 }
 
-fn fill_rounded(pixmap: &mut Pixmap, r: Rect, radius: f32, c: Rgb, alpha: u8) {
+pub(crate) fn fill_rounded(pixmap: &mut Pixmap, r: Rect, radius: f32, c: Rgb, alpha: u8) {
     if let Some(path) = rounded(r, radius) {
         pixmap.fill_path(
             &path,
