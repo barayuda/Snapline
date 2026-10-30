@@ -15,6 +15,14 @@ pub enum TrayClick {
     Capture,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UploadTarget {
+    #[default]
+    S3,
+    Drive,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -23,6 +31,17 @@ pub struct Settings {
     /// Capture shortcuts, as global-hotkey names (`PrintScreen`, `Ctrl+Shift+Digit1`).
     pub hotkeys: Vec<String>,
     pub tray_click: TrayClick,
+    pub upload_target: UploadTarget,
+    pub s3_endpoint: String,
+    pub s3_region: String,
+    pub s3_bucket: String,
+    pub s3_prefix: String,
+    pub s3_public_url: String,
+    pub google_client_id: String,
+    /// Shown in the settings window after sign-in.
+    pub google_email: String,
+    /// The Snapline folder in My Drive, once created.
+    pub drive_folder_id: String,
 }
 
 impl Default for Settings {
@@ -33,6 +52,15 @@ impl Default for Settings {
                 .unwrap_or_default(),
             hotkeys: vec!["PrintScreen".into(), "Ctrl+Shift+Digit1".into()],
             tray_click: TrayClick::Menu,
+            upload_target: UploadTarget::S3,
+            s3_endpoint: String::new(),
+            s3_region: "auto".into(),
+            s3_bucket: String::new(),
+            s3_prefix: "snapline".into(),
+            s3_public_url: String::new(),
+            google_client_id: String::new(),
+            google_email: String::new(),
+            drive_folder_id: String::new(),
         }
     }
 }
@@ -55,6 +83,40 @@ impl Settings {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Self::default(), None),
             Err(e) => (Self::default(), Some(format!("{}: {e}", path.display()))),
         }
+    }
+}
+
+#[allow(dead_code)] // used by uploads and the settings window (Tasks 8 and 9)
+impl Settings {
+    /// Writes the file (through a temporary file, so a crash never leaves half a file).
+    ///
+    /// # Errors
+    /// When the folder or file cannot be written.
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        let text = toml::to_string_pretty(self).map_err(|e| e.to_string())?;
+        let temp = path.with_extension("toml.tmp");
+        std::fs::write(&temp, text).map_err(|e| e.to_string())?;
+        std::fs::rename(&temp, path).map_err(|e| e.to_string())
+    }
+
+    /// Loads the latest file, applies `change` and saves it. Both Snapline processes write this file,
+    /// so neither keeps a stale copy. A file that does not parse is left alone.
+    ///
+    /// # Errors
+    /// When the file cannot be read as settings, or cannot be written.
+    pub fn update(path: &Path, change: impl FnOnce(&mut Self)) -> Result<Self, String> {
+        let (mut settings, problem) = Self::load(path);
+        if let Some(problem) = problem {
+            return Err(format!(
+                "Snapline did not save, because this file could not be read:\n{problem}"
+            ));
+        }
+        change(&mut settings);
+        settings.save(path)?;
+        Ok(settings)
     }
 }
 
@@ -200,5 +262,46 @@ mod tests {
             note.contains("Alt+Q") && note.contains("tray icon") && !note.contains("Snipping Tool"),
             "{note}"
         );
+    }
+
+    #[test]
+    fn upload_settings_round_trip_through_the_file() {
+        let path = temp_file("roundtrip", "");
+        let s = Settings {
+            upload_target: UploadTarget::Drive,
+            google_client_id: "id.apps.googleusercontent.com".into(),
+            ..Settings::default()
+        };
+        s.save(&path).unwrap();
+        let (loaded, problem) = Settings::load(&path);
+        assert!(problem.is_none());
+        assert_eq!(loaded, s);
+        assert_eq!(
+            (
+                Settings::default().s3_region.as_str(),
+                Settings::default().s3_prefix.as_str()
+            ),
+            ("auto", "snapline")
+        );
+    }
+
+    #[test]
+    fn update_keeps_what_it_does_not_change() {
+        let path = temp_file("update", "tray_click = \"capture\"\n");
+        Settings::update(&path, |s| s.upload_target = UploadTarget::Drive).unwrap();
+        let (s, _) = Settings::load(&path);
+        assert_eq!(
+            (s.tray_click, s.upload_target),
+            (TrayClick::Capture, UploadTarget::Drive)
+        );
+    }
+
+    // Review Focus 5.
+    #[test]
+    fn update_refuses_to_overwrite_a_broken_file() {
+        let text = "upload_target = \"s3\n";
+        let path = temp_file("broken-update", text);
+        assert!(Settings::update(&path, |s| s.s3_bucket = "x".into()).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
     }
 }
