@@ -15,11 +15,15 @@ mod popup_window;
 mod secrets;
 mod settings;
 mod upload_job;
+mod upload_settings;
 mod window;
 
 use winit::event_loop::{ControlFlow, EventLoop};
 
 fn main() {
+    if std::env::args().any(|a| a == "--upload-settings") {
+        return upload_settings::run_window();
+    }
     if !platform::claim_single_instance() {
         platform::show_error("Snapline is already running. Look for its icon next to the clock.");
         return;

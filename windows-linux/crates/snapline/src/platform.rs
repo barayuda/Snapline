@@ -1,11 +1,17 @@
 //! The few Windows calls Snapline makes directly. Other systems get harmless stand-ins until Phase 6.
 
-/// False when another Snapline is already running. The mutex lives as long as the process (never closed on purpose).
-#[cfg(windows)]
+/// False when another Snapline is already running.
 pub fn claim_single_instance() -> bool {
+    claim("Local\\dev.barayuda.snapline")
+}
+
+/// False when another process already holds the lock `name`. The lock lives as long as the process
+/// (never released on purpose).
+#[cfg(windows)]
+pub fn claim(name: &str) -> bool {
     use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
     use windows_sys::Win32::System::Threading::CreateMutexW;
-    let name: Vec<u16> = "Local\\dev.barayuda.snapline\0".encode_utf16().collect();
+    let name: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
     // SAFETY: `name` is a NUL-terminated UTF-16 string that outlives the call; null attributes are allowed.
     unsafe {
         CreateMutexW(std::ptr::null(), 0, name.as_ptr());
@@ -14,7 +20,7 @@ pub fn claim_single_instance() -> bool {
 }
 
 #[cfg(not(windows))]
-pub fn claim_single_instance() -> bool {
+pub fn claim(_name: &str) -> bool {
     true // ponytail: no check off Windows yet; Linux gets one in Phase 6
 }
 

@@ -26,14 +26,12 @@ impl Secret {
 
 pub trait SecretStore: Send + Sync {
     fn get(&self, secret: Secret) -> Option<String>;
-    #[allow(dead_code)] // used by the settings window (Task 9)
     fn put(&self, secret: Secret, value: &str) -> Result<(), String>;
     /// Removing a secret that is not there succeeds.
     fn remove(&self, secret: Secret) -> Result<(), String>;
 }
 
 /// Saves `value` without surrounding spaces; an empty value removes the secret.
-#[allow(dead_code)] // used by the settings window (Task 9)
 pub fn save(store: &dyn SecretStore, secret: Secret, value: &str) -> Result<(), String> {
     let value = value.trim();
     if value.is_empty() {
