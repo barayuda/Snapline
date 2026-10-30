@@ -86,7 +86,6 @@ impl Settings {
     }
 }
 
-#[allow(dead_code)] // used by uploads and the settings window (Tasks 8 and 9)
 impl Settings {
     /// Writes the file (through a temporary file, so a crash never leaves half a file).
     ///

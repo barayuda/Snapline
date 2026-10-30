@@ -65,3 +65,48 @@ pub fn show_info(message: &str) {
         .set_buttons(rfd::MessageButtons::Ok)
         .show();
 }
+
+/// The usable part (without the taskbar) of the monitor under `(x, y)`, in physical pixels.
+#[cfg(windows)]
+pub fn work_area(x: i32, y: i32) -> Option<snapline_overlay::Rect> {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
+    };
+    // SAFETY: plain calls; `info` is a valid MONITORINFO with its size set.
+    unsafe {
+        let monitor = MonitorFromPoint(POINT { x, y }, MONITOR_DEFAULTTONEAREST);
+        let mut info: MONITORINFO = std::mem::zeroed();
+        info.cbSize = u32::try_from(std::mem::size_of::<MONITORINFO>()).ok()?;
+        if GetMonitorInfoW(monitor, &raw mut info) == 0 {
+            return None;
+        }
+        let r = info.rcWork;
+        Some(snapline_overlay::Rect::new(
+            f64::from(r.left),
+            f64::from(r.top),
+            f64::from(r.right - r.left),
+            f64::from(r.bottom - r.top),
+        ))
+    }
+}
+
+#[cfg(not(windows))]
+pub fn work_area(_x: i32, _y: i32) -> Option<snapline_overlay::Rect> {
+    None // the caller falls back to the monitor's full area
+}
+
+/// Opens the upload settings window: this program again, as a second process.
+pub fn open_upload_settings() {
+    match std::env::current_exe() {
+        Ok(exe) => {
+            if let Err(e) = std::process::Command::new(exe)
+                .arg("--upload-settings")
+                .spawn()
+            {
+                show_error(&format!("Snapline could not open its upload settings: {e}"));
+            }
+        }
+        Err(e) => show_error(&format!("Snapline could not open its upload settings: {e}")),
+    }
+}

@@ -2,22 +2,32 @@
 
 use crate::actions;
 use crate::capture;
-use crate::icon;
+use crate::icon::{self, TrayState};
 use crate::platform::{self, show_error};
+use crate::popup_window::PopupWindow;
+use crate::secrets::Keyring;
 use crate::settings::{self, Settings, TrayClick};
+use crate::upload_job::{self, Job, Outcome};
 use crate::window::OverlayWindow;
+use chrono::Local;
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
+use snapline_core::naming;
 use snapline_overlay::input::{Key, Mods};
+use snapline_overlay::popup::{self, Popup, PopupButton, PopupState};
 use snapline_overlay::session::{Command, CursorKind, Effect, Redraw, Session};
 use snapline_overlay::text::TextFont;
 use snapline_overlay::{Point, Rect};
+use snapline_upload::google::AccessToken;
+use snapline_upload::http::UreqTransport;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use winit::application::ApplicationHandler;
+use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
 use winit::keyboard::{Key as WinitKey, NamedKey, PhysicalKey};
 use winit::window::{CursorIcon, WindowId};
 
@@ -27,6 +37,8 @@ pub enum UserEvent {
     CaptureNow,
     Menu(MenuId),
     Tray(TrayIconEvent),
+    UploadProgress(f64),
+    UploadFinished(Outcome),
 }
 
 struct Capture {
@@ -49,6 +61,16 @@ pub struct App {
     hotkeys: Option<GlobalHotKeyManager>,
     capture: Option<Capture>,
     started: bool,
+    secrets: Option<Keyring>,
+    settings_item: MenuId,
+    popup: Option<(Popup, PopupWindow)>,
+    popup_close_at: Option<Instant>,
+    popup_hovered: bool,
+    icon_reset_at: Option<Instant>,
+    /// The last upload, for Try again and the search that follows it.
+    last_job: Option<Job>,
+    uploading: bool,
+    google_token: Option<AccessToken>,
 }
 
 impl App {
@@ -65,6 +87,15 @@ impl App {
             hotkeys: None,
             capture: None,
             started: false,
+            secrets: None,
+            settings_item: MenuId::new("upload-settings"),
+            popup: None,
+            popup_close_at: None,
+            popup_hovered: false,
+            icon_reset_at: None,
+            last_job: None,
+            uploading: false,
+            google_token: None,
         }
     }
 
@@ -78,6 +109,12 @@ impl App {
                     "Snapline is using its default settings because this file could not be read:\n\n{problem}"
                 ));
             }
+        }
+        match Keyring::open() {
+            Ok(store) => self.secrets = Some(store),
+            Err(e) => show_error(&format!(
+                "Snapline cannot reach Credential Manager, so uploads are off: {e}"
+            )),
         }
         let proxy = Mutex::new(self.proxy.clone());
         GlobalHotKeyEvent::set_event_handler(Some(move |e: GlobalHotKeyEvent| {
@@ -159,11 +196,13 @@ impl App {
                 .map_err(|e| e.to_string())?;
         }
         menu.append_items(&[
+            &MenuItem::with_id(self.settings_item.clone(), "Upload Settings…", true, None),
             &PredefinedMenuItem::separator(),
             &MenuItem::with_id(self.quit.clone(), "Quit Snapline", true, None),
         ])
         .map_err(|e| e.to_string())?;
-        let icon = Icon::from_rgba(icon::tray_rgba(32), 32, 32).map_err(|e| e.to_string())?;
+        let icon = Icon::from_rgba(icon::tray_rgba(32, icon::TrayState::Normal), 32, 32)
+            .map_err(|e| e.to_string())?;
         TrayIconBuilder::new()
             .with_icon(icon)
             .with_tooltip("Snapline")
@@ -233,7 +272,7 @@ impl App {
         self.capture = Some(cap);
     }
 
-    fn apply(&mut self, i: usize, effect: Effect) {
+    fn apply(&mut self, event_loop: &ActiveEventLoop, i: usize, effect: Effect) {
         let Some(cap) = self.capture.as_mut() else {
             return;
         };
@@ -259,9 +298,294 @@ impl App {
         let Some(image) = image else {
             return platform::beep();
         };
-        if let Err(e) = actions::run(command, &image, &self.settings) {
-            show_error(&e);
+        match command {
+            Command::Upload | Command::Search(_) => {
+                let search = if let Command::Search(engine) = command {
+                    Some(engine)
+                } else {
+                    None
+                };
+                match image.encode_png() {
+                    Ok(png) => {
+                        let job = Job {
+                            png,
+                            file_name: naming::file_name(Local::now()),
+                            search,
+                        };
+                        self.start_upload(job, event_loop);
+                    }
+                    Err(e) => show_error(&format!("Snapline could not make the PNG: {e}")),
+                }
+            }
+            _ => match actions::run(command, &image, &self.settings) {
+                Ok(Some(done)) => self.confirm(done, event_loop),
+                Ok(None) => {}
+                Err(e) => show_error(&e),
+            },
         }
+    }
+
+    /// "Screenshot copied" / "Screenshot saved", which fades after a moment.
+    fn confirm(&mut self, done: actions::Done, event_loop: &ActiveEventLoop) {
+        let (title, detail) = match done {
+            actions::Done::Copied { width, height } => {
+                ("Screenshot copied", format!("{width} × {height} pixels"))
+            }
+            actions::Done::Saved(path) => (
+                "Screenshot saved",
+                path.file_name().map_or_else(
+                    || path.display().to_string(),
+                    |n| n.to_string_lossy().into_owned(),
+                ),
+            ),
+        };
+        self.show_popup(
+            event_loop,
+            PopupState::Message {
+                title: title.into(),
+                detail,
+            },
+            Some(2.5),
+        );
+    }
+
+    fn start_upload(&mut self, job: Job, event_loop: &ActiveEventLoop) {
+        if self.uploading {
+            let detail = "Wait for the current upload to finish, then try again.".into();
+            return self.show_popup(
+                event_loop,
+                PopupState::Message {
+                    title: "Upload in progress".into(),
+                    detail,
+                },
+                Some(2.5),
+            );
+        }
+        let (Some(secrets), Some(path)) = (self.secrets, Settings::path()) else {
+            let message = "Snapline cannot reach its settings or Credential Manager.".into();
+            return self.show_popup(event_loop, PopupState::Failed { message }, None);
+        };
+        self.uploading = true;
+        self.last_job = Some(job.clone());
+        self.show_popup(
+            event_loop,
+            PopupState::Uploading {
+                progress: 0.0,
+                file: job.file_name.clone(),
+            },
+            None,
+        );
+        self.set_tray(TrayState::Progress(0.0));
+        let proxy = self.proxy.clone();
+        let token = self.google_token.clone();
+        std::thread::spawn(move || {
+            let last = std::sync::atomic::AtomicU32::new(0);
+            let report = |p: f64| {
+                let percent = (p * 100.0) as u32;
+                if percent != last.swap(percent, std::sync::atomic::Ordering::Relaxed) {
+                    let _ = proxy.send_event(UserEvent::UploadProgress(p));
+                }
+            };
+            let outcome =
+                upload_job::run(&job, &path, &secrets, &UreqTransport::new(), token, &report);
+            let _ = proxy.send_event(UserEvent::UploadFinished(outcome));
+        });
+    }
+
+    fn finish_upload(&mut self, outcome: Outcome, event_loop: &ActiveEventLoop) {
+        self.uploading = false;
+        match outcome {
+            Outcome::Done { result, token } => {
+                self.google_token = token;
+                let link = result.page.to_string();
+                copy_text(&link);
+                if let Some(engine) = self.last_job.as_ref().and_then(|j| j.search) {
+                    let _ = open::that(engine.url(&result.direct).as_str());
+                }
+                self.show_popup(event_loop, PopupState::Done { link }, Some(4.0));
+                self.set_tray(TrayState::Success);
+                self.icon_reset_at = Some(Instant::now() + Duration::from_secs(4));
+            }
+            Outcome::Failed(message) => {
+                self.show_popup(event_loop, PopupState::Failed { message }, None);
+                self.set_tray(TrayState::Failure);
+                self.icon_reset_at = Some(Instant::now() + Duration::from_secs(6));
+            }
+        }
+    }
+
+    fn set_tray(&self, state: TrayState) {
+        if let (Some(tray), Ok(icon)) = (
+            &self.tray,
+            Icon::from_rgba(icon::tray_rgba(32, state), 32, 32),
+        ) {
+            let _ = tray.set_icon(Some(icon));
+        }
+    }
+
+    /// Shows `state` in the popup next to the tray icon, creating or moving its window.
+    fn show_popup(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        state: PopupState,
+        close_after: Option<f64>,
+    ) {
+        let anchor = self.tray.as_ref().and_then(TrayIcon::rect).map(|r| {
+            Rect::new(
+                r.position.x,
+                r.position.y,
+                f64::from(r.size.width),
+                f64::from(r.size.height),
+            )
+        });
+        let centre = anchor.map_or((0, 0), |a| {
+            ((a.x + a.width / 2.0) as i32, (a.y + a.height / 2.0) as i32)
+        });
+        let monitor = event_loop
+            .available_monitors()
+            .find(|m| {
+                let (p, s) = (m.position(), m.size());
+                centre.0 >= p.x
+                    && centre.1 >= p.y
+                    && i64::from(centre.0) < i64::from(p.x) + i64::from(s.width)
+                    && i64::from(centre.1) < i64::from(p.y) + i64::from(s.height)
+            })
+            .or_else(|| event_loop.primary_monitor());
+        let scale = monitor
+            .as_ref()
+            .map_or(1.0, winit::monitor::MonitorHandle::scale_factor);
+        let work = platform::work_area(centre.0, centre.1)
+            .or_else(|| {
+                monitor.as_ref().map(|m| {
+                    let (p, s) = (m.position(), m.size());
+                    Rect::new(
+                        f64::from(p.x),
+                        f64::from(p.y),
+                        f64::from(s.width),
+                        f64::from(s.height),
+                    )
+                })
+            })
+            .unwrap_or(Rect::new(0.0, 0.0, 1280.0, 800.0));
+        let model = Popup::new(state);
+        let size = model.size(&self.font, scale);
+        let at = popup::origin(anchor, size, work, 8.0 * scale);
+        let position = PhysicalPosition::new(at.x as i32, at.y as i32);
+        let dims = PhysicalSize::new(size.width.ceil() as u32, size.height.ceil() as u32);
+        let window = match self.popup.take() {
+            Some((_, mut window)) => {
+                window.scale = scale;
+                if let Err(e) = window.place(position, dims) {
+                    eprintln!("Snapline: {e}");
+                }
+                window
+            }
+            None => match PopupWindow::open(event_loop, position, dims, scale) {
+                Ok(window) => window,
+                Err(e) => {
+                    return show_error(&format!("Snapline could not show its status popup: {e}"));
+                }
+            },
+        };
+        self.popup = Some((model, window));
+        self.popup_hovered = false;
+        self.redraw_popup();
+        self.popup_close_at =
+            close_after.map(|seconds| Instant::now() + Duration::from_secs_f64(seconds));
+    }
+
+    fn redraw_popup(&mut self) {
+        if let Some((popup, window)) = &mut self.popup
+            && let Err(e) = window.present(popup, &self.font)
+        {
+            eprintln!("Snapline: {e}");
+        }
+    }
+
+    fn close_popup(&mut self) {
+        self.popup = None;
+        self.popup_close_at = None;
+        self.popup_hovered = false;
+    }
+
+    fn popup_event(&mut self, event_loop: &ActiveEventLoop, event: &WindowEvent) {
+        match event {
+            WindowEvent::RedrawRequested => self.redraw_popup(),
+            WindowEvent::CursorMoved { position, .. } => {
+                self.popup_hovered = true;
+                if let Some((popup, window)) = &mut self.popup {
+                    let hit = popup.hit(
+                        &self.font,
+                        window.scale,
+                        Point {
+                            x: position.x,
+                            y: position.y,
+                        },
+                    );
+                    if popup.hover != hit {
+                        popup.hover = hit;
+                        window.window.request_redraw();
+                    }
+                }
+            }
+            WindowEvent::CursorLeft { .. } => {
+                self.popup_hovered = false;
+                if let Some((popup, window)) = &mut self.popup {
+                    popup.hover = None;
+                    window.window.request_redraw();
+                }
+                // It was due to close while the pointer was on it: close a moment after the pointer leaves.
+                if self.popup_close_at.is_some_and(|t| t <= Instant::now()) {
+                    self.popup_close_at = Some(Instant::now() + Duration::from_millis(1500));
+                }
+            }
+            WindowEvent::MouseInput {
+                state,
+                button: MouseButton::Left,
+                ..
+            } if state.is_pressed() => {
+                if let Some(button) = self.popup.as_ref().and_then(|(p, _)| p.hover) {
+                    self.popup_button(button, event_loop);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn popup_button(&mut self, button: PopupButton, event_loop: &ActiveEventLoop) {
+        let link = match self.popup.as_ref().map(|(p, _)| &p.state) {
+            Some(PopupState::Done { link }) => Some(link.clone()),
+            _ => None,
+        };
+        match button {
+            PopupButton::Copy => {
+                if let Some(link) = link {
+                    copy_text(&link);
+                }
+            }
+            PopupButton::Open => {
+                if let Some(link) = link {
+                    let _ = open::that(link);
+                }
+                self.close_popup();
+            }
+            PopupButton::Settings => {
+                platform::open_upload_settings();
+                self.close_popup();
+            }
+            PopupButton::Retry => {
+                if let Some(job) = self.last_job.clone() {
+                    self.start_upload(job, event_loop);
+                }
+            }
+            PopupButton::Close => self.close_popup(),
+        }
+    }
+}
+
+fn copy_text(text: &str) {
+    if let Err(e) = arboard::Clipboard::new().and_then(|mut c| c.set_text(text.to_owned())) {
+        eprintln!("Snapline: could not copy the link: {e}");
     }
 }
 
@@ -324,6 +648,21 @@ impl ApplicationHandler<UserEvent> for App {
         }
     }
 
+    /// Closes the popup and resets the tray icon on time, and sleeps until the next of those.
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let now = Instant::now();
+        if self.popup_close_at.is_some_and(|t| t <= now) && !self.popup_hovered {
+            self.close_popup();
+        }
+        if self.icon_reset_at.is_some_and(|t| t <= now) {
+            self.icon_reset_at = None;
+            self.set_tray(TrayState::Normal);
+        }
+        let close = self.popup_close_at.filter(|_| !self.popup_hovered);
+        let next = [close, self.icon_reset_at].into_iter().flatten().min();
+        event_loop.set_control_flow(next.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
+    }
+
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
             UserEvent::HotKey | UserEvent::CaptureNow => self.open_capture(event_loop),
@@ -336,6 +675,17 @@ impl ApplicationHandler<UserEvent> for App {
                 });
             }
             UserEvent::Menu(id) if id == self.quit => event_loop.exit(),
+            UserEvent::Menu(id) if id == self.settings_item => platform::open_upload_settings(),
+            UserEvent::UploadProgress(p) => {
+                self.set_tray(TrayState::Progress(p));
+                if let Some((popup, window)) = &mut self.popup
+                    && let PopupState::Uploading { progress, .. } = &mut popup.state
+                {
+                    *progress = p;
+                    window.window.request_redraw();
+                }
+            }
+            UserEvent::UploadFinished(outcome) => self.finish_upload(outcome, event_loop),
             UserEvent::Menu(id) if id == self.why => {
                 if let Some(note) = &self.shortcut_note {
                     platform::show_info(note);
@@ -350,7 +700,14 @@ impl ApplicationHandler<UserEvent> for App {
         }
     }
 
-    fn window_event(&mut self, _event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        if self
+            .popup
+            .as_ref()
+            .is_some_and(|(_, w)| w.window.id() == id)
+        {
+            return self.popup_event(event_loop, &event);
+        }
         let Some(cap) = self.capture.as_mut() else {
             return;
         };
@@ -417,7 +774,7 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::CloseRequested => Effect::command(Command::Cancel),
             _ => return,
         };
-        self.apply(i, effect);
+        self.apply(event_loop, i, effect);
     }
 }
 

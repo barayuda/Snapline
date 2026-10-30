@@ -11,10 +11,9 @@ mod app;
 mod capture;
 mod icon;
 mod platform;
-#[allow(dead_code)] // wired up in Task 8
+mod popup_window;
 mod secrets;
 mod settings;
-#[allow(dead_code)] // wired up in Task 8
 mod upload_job;
 mod window;
 

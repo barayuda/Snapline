@@ -14,6 +14,7 @@ chrono = "0.4.45"
 dirs = "7.0.0"
 global-hotkey = "0.9.0"
 keyring-core = "1.0.1"
+open = "5.4.5"
 rfd = "0.17.2"
 serde = { version = "1.0.229", features = ["derive"] }
 snapline-core = { path = "../snapline-core" }
@@ -27,7 +28,7 @@ xcap = "0.9.8"
 
 [target."cfg(windows)".dependencies]
 windows-native-keyring-store = "1.1.0"
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Diagnostics_Debug", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_System_Diagnostics_Debug", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1.0.2", features = ["keychain"] }
