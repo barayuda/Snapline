@@ -7,6 +7,7 @@ use crate::input::{Key, Mods};
 use crate::render;
 use crate::text::TextFont;
 use crate::toolbar::{self, Bar, Button};
+use snapline_core::search::SearchEngine;
 use snapline_core::selection_geometry::{self as geo, Handle, Point, Rect};
 use tiny_skia::Pixmap;
 
@@ -16,6 +17,8 @@ pub enum Command {
     Save,
     SaveAs,
     Cancel,
+    Upload,
+    Search(SearchEngine),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -196,6 +199,7 @@ pub struct Session {
     /// The monitor that gets the keyboard: the one last clicked, or the one under the pointer at the start.
     pub focused: usize,
     pub palette_open: bool,
+    pub search_open: bool,
     pub font: TextFont,
 }
 
@@ -214,6 +218,7 @@ impl Session {
             font_size: 22.0,
             focused: 0,
             palette_open: false,
+            search_open: false,
             font,
         }
     }
@@ -262,7 +267,13 @@ impl Session {
                     && sel.height > 2.0 * o.ui_scale
                     && !o.is_dragging() =>
             {
-                toolbar::layout(sel, o.bounds(), o.ui_scale, self.palette_open)
+                toolbar::layout(
+                    sel,
+                    o.bounds(),
+                    o.ui_scale,
+                    self.palette_open,
+                    self.search_open,
+                )
             }
             _ => Vec::new(),
         }
@@ -271,6 +282,9 @@ impl Session {
     fn press(&mut self, button: Button, mods: Mods) -> Effect {
         if !matches!(button, Button::Color | Button::Swatch(_)) {
             self.palette_open = false;
+        }
+        if !matches!(button, Button::Search | Button::Engine(_)) {
+            self.search_open = false;
         }
         match button {
             Button::Tool(t) => {
@@ -295,6 +309,16 @@ impl Session {
                 Command::Save
             }),
             Button::Close => Effect::command(Command::Cancel),
+            Button::Upload => self.request(Command::Upload),
+            Button::Search => {
+                self.search_open = !self.search_open;
+                self.palette_open = false;
+                Effect::all()
+            }
+            Button::Engine(engine) => {
+                self.search_open = false;
+                self.request(Command::Search(engine))
+            }
         }
     }
 
@@ -317,6 +341,7 @@ impl Session {
             return self.press(button, mods);
         }
         self.palette_open = false;
+        self.search_open = false;
         self.commit_text();
         let scale = self.overlays[i].ui_scale;
         let action = match self.overlays[i].usable_selection() {
@@ -505,6 +530,7 @@ impl Session {
                 }),
                 'z' => self.undo(),
                 'a' => self.select_whole_screen(),
+                'd' => self.request(Command::Upload),
                 _ => Effect::NONE,
             },
             Key::Char('+' | '=') => {
@@ -1042,5 +1068,37 @@ pub(crate) mod tests {
         assert_eq!(s.bars(0), []);
         s.pointer_up(0, pt(50.0, 30.0));
         assert_eq!(s.bars(0)[0].buttons.len(), toolbar::MAIN_BAR.len());
+    }
+
+    #[test]
+    fn ctrl_d_uploads() {
+        let mut s = selected(1.0);
+        assert_eq!(s.key(Key::Char('d'), ctrl()).command, Some(Command::Upload));
+        assert!(
+            session(1, 1.0).key(Key::Char('d'), ctrl()).beep,
+            "no selection, nothing to upload"
+        );
+    }
+
+    #[test]
+    fn search_opens_a_menu_and_runs_the_picked_engine() {
+        let mut s = selected(1.0);
+        click_button(&mut s, Button::Search, Mods::default());
+        assert!(s.search_open);
+        let effect = click_button(
+            &mut s,
+            Button::Engine(SearchEngine::TinEye),
+            Mods::default(),
+        );
+        assert_eq!(effect.command, Some(Command::Search(SearchEngine::TinEye)));
+        assert!(!s.search_open);
+    }
+
+    #[test]
+    fn a_click_elsewhere_closes_the_search_menu() {
+        let mut s = selected(1.0);
+        click_button(&mut s, Button::Search, Mods::default());
+        drag(&mut s, 0, pt(50.0, 30.0), pt(50.0, 30.0));
+        assert!(!s.search_open);
     }
 }

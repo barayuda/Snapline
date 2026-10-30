@@ -39,7 +39,8 @@ pub fn run(command: Command, image: &Pixmap, settings: &Settings) -> Result<(), 
             std::fs::write(&path, png)
                 .map_err(|e| format!("Snapline could not save {}: {e}", path.display()))
         }
-        Command::Cancel => Ok(()),
+        // Uploads are handled by the app itself (Task 8).
+        Command::Cancel | Command::Upload | Command::Search(_) => Ok(()),
     }
 }
 

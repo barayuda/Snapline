@@ -137,7 +137,27 @@ fn outline(button: Button) -> PathBuilder {
             pb.move_to(18.0, 6.0);
             pb.line_to(6.0, 18.0);
         }
-        Button::Tool(Tool::Hide | Tool::Marker) | Button::Color | Button::Swatch(_) => {}
+        Button::Upload => {
+            pb.move_to(12.0, 15.0);
+            pb.line_to(12.0, 4.0);
+            pb.move_to(7.0, 9.0);
+            pb.line_to(12.0, 4.0);
+            pb.line_to(17.0, 9.0);
+            pb.move_to(5.0, 15.0);
+            pb.line_to(5.0, 19.0);
+            pb.line_to(19.0, 19.0);
+            pb.line_to(19.0, 15.0);
+        }
+        Button::Search => {
+            pb.push_circle(10.0, 10.0, 6.0);
+            pb.move_to(14.5, 14.5);
+            pb.line_to(20.0, 20.0);
+        }
+        // Drawn another way: filled, coloured, or a text label (search menu entries, by render).
+        Button::Tool(Tool::Hide | Tool::Marker)
+        | Button::Color
+        | Button::Swatch(_)
+        | Button::Engine(_) => {}
     }
     pb
 }

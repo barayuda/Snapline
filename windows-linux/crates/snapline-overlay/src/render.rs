@@ -282,6 +282,16 @@ fn draw_bars(out: &mut Pixmap, session: &Session, i: usize, bars: &[Bar]) {
             if o.hover == Some(*button) {
                 fill_rounded(out, *r, (5.0 * scale) as f32, WHITE, 40);
             }
+            if let Button::Engine(engine) = button {
+                let size = (13.0 * scale) as f32;
+                let h = session.font.measure(engine.title(), size).height;
+                let at = Point {
+                    x: r.x + 8.0 * scale,
+                    y: r.y + (r.height - h) / 2.0,
+                };
+                session.font.draw(out, engine.title(), at, size, WHITE);
+                continue;
+            }
             let active = matches!(button, Button::Tool(t) if session.tool == Some(*t));
             icons::draw(
                 out,
@@ -693,5 +703,19 @@ mod tests {
             r < 60 && g < 60 && b < 60,
             "the tooltip should be right of the bar, on the button's row"
         );
+    }
+
+    #[test]
+    fn search_menu_shows_its_labels() {
+        let mut s = screen_session(1);
+        select(&mut s, Rect::new(60.0, 40.0, 150.0, 80.0));
+        s.search_open = true;
+        let menu = s.bars(0)[2].buttons[0].1;
+        let out = rendered(&s, 0);
+        let row = (menu.y + menu.height / 2.0) as u32;
+        let light = (menu.x as u32..(menu.x + menu.width) as u32)
+            .filter(|&x| rgb(&out, x, row).0 > 200)
+            .count();
+        assert!(light > 5, "the label text should be drawn");
     }
 }
