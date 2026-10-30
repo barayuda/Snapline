@@ -7,7 +7,7 @@ use crate::platform::{self, show_error};
 use crate::popup_window::PopupWindow;
 use crate::secrets::Keyring;
 use crate::settings::{self, Settings, TrayClick};
-use crate::upload_job::{self, Job, Outcome};
+use crate::upload_job::{self, CachedToken, Job, Outcome};
 use crate::window::OverlayWindow;
 use chrono::Local;
 use global_hotkey::hotkey::HotKey;
@@ -18,7 +18,6 @@ use snapline_overlay::popup::{self, Popup, PopupButton, PopupState};
 use snapline_overlay::session::{Command, CursorKind, Effect, Redraw, Session};
 use snapline_overlay::text::TextFont;
 use snapline_overlay::{Point, Rect};
-use snapline_upload::google::AccessToken;
 use snapline_upload::http::UreqTransport;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -70,7 +69,7 @@ pub struct App {
     /// The last upload, for Try again and the search that follows it.
     last_job: Option<Job>,
     uploading: bool,
-    google_token: Option<AccessToken>,
+    google_token: Option<CachedToken>,
 }
 
 impl App {
@@ -407,6 +406,8 @@ impl App {
                 self.icon_reset_at = Some(Instant::now() + Duration::from_secs(4));
             }
             Outcome::Failed(message) => {
+                // A failure may come from a dead sign-in: never reuse its token.
+                self.google_token = None;
                 self.show_popup(event_loop, PopupState::Failed { message }, None);
                 self.set_tray(TrayState::Failure);
                 self.icon_reset_at = Some(Instant::now() + Duration::from_secs(6));

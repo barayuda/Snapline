@@ -4,8 +4,10 @@ use crate::secrets::{Secret, SecretStore};
 use crate::settings::{Settings, UploadTarget};
 use chrono::Local;
 use snapline_core::search::SearchEngine;
+use snapline_core::sigv4::SigV4Signer;
 use snapline_upload::UploadResult;
 use snapline_upload::drive;
+use snapline_upload::error::UploadError;
 use snapline_upload::google::{self, AccessToken, GoogleClient, RefreshError};
 use snapline_upload::http::Transport;
 use snapline_upload::s3::{self, S3Config};
@@ -19,11 +21,25 @@ pub struct Job {
     pub search: Option<SearchEngine>,
 }
 
+/// A Google access token, remembered with the sign-in it came from so a later sign-in never reuses it.
+#[derive(Clone, Debug)]
+pub struct CachedToken {
+    /// `fingerprint` of the refresh token this access token was made from.
+    pub for_refresh: String,
+    pub access: AccessToken,
+}
+
+/// A one-way fingerprint of a refresh token (the token itself never leaves Credential Manager).
+pub fn fingerprint(refresh_token: &str) -> String {
+    SigV4Signer::sha256_hex(refresh_token.as_bytes())
+}
+
+#[allow(clippy::large_enum_variant)] // one per upload, moved once to the UI thread
 pub enum Outcome {
     /// `token` is the Google access token to reuse for the next upload.
     Done {
         result: UploadResult,
-        token: Option<AccessToken>,
+        token: Option<CachedToken>,
     },
     Failed(String),
 }
@@ -67,7 +83,7 @@ pub fn run(
     settings_path: &Path,
     secrets: &dyn SecretStore,
     t: &dyn Transport,
-    token: Option<AccessToken>,
+    token: Option<CachedToken>,
     progress: &dyn Fn(f64),
 ) -> Outcome {
     let (settings, problem) = Settings::load(settings_path);
@@ -76,7 +92,10 @@ pub fn run(
     }
     match destination(&settings, secrets) {
         Destination::S3(config) => match s3::upload(t, &config, &job.png, Local::now(), progress) {
-            Ok(result) => Outcome::Done { result, token },
+            Ok(result) => Outcome::Done {
+                result,
+                token: None,
+            },
             Err(e) => Outcome::Failed(e.to_string()),
         },
         Destination::Drive {
@@ -103,7 +122,7 @@ fn drive_upload(
     settings_path: &Path,
     secrets: &dyn SecretStore,
     t: &dyn Transport,
-    token: Option<AccessToken>,
+    token: Option<CachedToken>,
     progress: &dyn Fn(f64),
     client: &GoogleClient,
     refresh_token: Option<String>,
@@ -117,29 +136,48 @@ fn drive_upload(
     let Some(refresh) = refresh_token else {
         return Outcome::Failed(google::NOT_SIGNED_IN.into());
     };
-    let access = match token.filter(AccessToken::is_fresh) {
-        Some(access) => access,
-        None => match google::refresh(t, client, &refresh) {
-            Ok(access) => access,
-            Err(RefreshError::Expired) => {
-                let _ = secrets.remove(Secret::GoogleRefreshToken);
-                let _ = Settings::update(settings_path, |s| {
-                    s.google_email.clear();
-                    s.drive_folder_id.clear();
-                });
-                return Outcome::Failed(google::EXPIRED.into());
-            }
-            Err(RefreshError::Failed(e)) => return Outcome::Failed(e.to_string()),
-        },
+    let print = fingerprint(&refresh);
+    let renew = || match google::refresh(t, client, &refresh) {
+        Ok(access) => Ok(access),
+        Err(RefreshError::Expired) => {
+            let _ = secrets.remove(Secret::GoogleRefreshToken);
+            let _ = Settings::update(settings_path, |s| {
+                s.google_email.clear();
+                s.drive_folder_id.clear();
+            });
+            Err(google::EXPIRED.to_owned())
+        }
+        Err(RefreshError::Failed(e)) => Err(e.to_string()),
     };
-    match drive::upload(
-        t,
-        &access.token,
-        folder_id,
-        &job.png,
-        &job.file_name,
-        progress,
-    ) {
+    // Only a token made from the refresh token saved now: signing out and in again must not reuse the old one.
+    let cached = token
+        .filter(|c| c.for_refresh == print && c.access.is_fresh())
+        .map(|c| c.access);
+    let from_cache = cached.is_some();
+    let mut access = match cached.map_or_else(renew, Ok) {
+        Ok(access) => access,
+        Err(message) => return Outcome::Failed(message),
+    };
+    let upload = |access: &AccessToken| {
+        drive::upload(
+            t,
+            &access.token,
+            folder_id,
+            &job.png,
+            &job.file_name,
+            progress,
+        )
+    };
+    let mut result = upload(&access);
+    // A cached token Google no longer accepts (revoked, or signed out elsewhere): get a new one once.
+    if from_cache && matches!(result, Err(UploadError::Http { status: 401, .. })) {
+        access = match renew() {
+            Ok(access) => access,
+            Err(message) => return Outcome::Failed(message),
+        };
+        result = upload(&access);
+    }
+    match result {
         Ok(done) => {
             if folder_id != Some(done.folder_id.as_str()) {
                 let _ = Settings::update(settings_path, |s| {
@@ -148,7 +186,10 @@ fn drive_upload(
             }
             Outcome::Done {
                 result: done.result,
-                token: Some(access),
+                token: Some(CachedToken {
+                    for_refresh: print,
+                    access,
+                }),
             }
         }
         Err(e) => Outcome::Failed(e.to_string()),
@@ -311,5 +352,103 @@ mod tests {
         };
         assert_eq!(message, snapline_upload::google::NOT_SIGNED_IN);
         assert_eq!(fake.requests(), []);
+    }
+
+    fn cached(for_refresh: &str, token: &str) -> CachedToken {
+        let access = snapline_upload::google::AccessToken {
+            token: token.into(),
+            expires: std::time::Instant::now() + std::time::Duration::from_mins(50),
+        };
+        CachedToken {
+            for_refresh: fingerprint(for_refresh),
+            access,
+        }
+    }
+
+    fn drive_settings(name: &str) -> std::path::PathBuf {
+        settings_file(name, |s| {
+            s.upload_target = UploadTarget::Drive;
+            s.google_client_id = "ID".into();
+        })
+    }
+
+    const UPLOADED: &str = r#"{"id":"X1","webViewLink":"https://drive.google.com/file/d/X1/view"}"#;
+
+    fn bearer(request: &snapline_upload::http::Request) -> Option<&str> {
+        request
+            .headers
+            .iter()
+            .find(|(k, _)| k == "Authorization")
+            .map(|(_, v)| v.as_str())
+    }
+
+    // Review finding: after signing in again, the old cached token was still used.
+    #[test]
+    fn a_cached_token_from_another_sign_in_is_not_used() {
+        let fake = FakeTransport::new(vec![
+            (200, r#"{"access_token":"NEW","expires_in":3600}"#),
+            (200, r#"{"id":"F1"}"#),
+            (200, UPLOADED),
+            (200, "{}"),
+        ]);
+        let outcome = run(
+            &job(),
+            &drive_settings("other"),
+            &drive_store(),
+            &fake,
+            Some(cached("OLD", "STALE")),
+            &|_| {},
+        );
+        assert!(matches!(outcome, Outcome::Done { .. }));
+        let sent = fake.requests();
+        assert_eq!(sent[0].url.as_str(), snapline_core::google_oauth::TOKEN_URL);
+        assert!(sent[1..].iter().all(|r| bearer(r) == Some("Bearer NEW")));
+    }
+
+    // Review finding: a token revoked at Google kept failing with 401 for up to an hour.
+    #[test]
+    fn a_rejected_cached_token_is_refreshed_once_and_retried() {
+        let fake = FakeTransport::new(vec![
+            (401, r#"{"error":{"message":"Invalid Credentials"}}"#),
+            (200, r#"{"access_token":"NEW","expires_in":3600}"#),
+            (200, r#"{"id":"F1"}"#),
+            (200, UPLOADED),
+            (200, "{}"),
+        ]);
+        let outcome = run(
+            &job(),
+            &drive_settings("retry"),
+            &drive_store(),
+            &fake,
+            Some(cached("R", "OLD")),
+            &|_| {},
+        );
+        let Outcome::Done {
+            token: Some(token), ..
+        } = outcome
+        else {
+            panic!("expected Done")
+        };
+        assert_eq!(token.access.token, "NEW");
+        assert_eq!(fake.requests().len(), 5);
+    }
+
+    #[test]
+    fn a_rejected_token_with_a_revoked_sign_in_asks_to_sign_in_again() {
+        let fake = FakeTransport::new(vec![(401, "{}"), (400, r#"{"error":"invalid_grant"}"#)]);
+        let store = drive_store();
+        let outcome = run(
+            &job(),
+            &drive_settings("revoked"),
+            &store,
+            &fake,
+            Some(cached("R", "OLD")),
+            &|_| {},
+        );
+        let Outcome::Failed(message) = outcome else {
+            panic!("expected Failed")
+        };
+        assert_eq!(message, snapline_upload::google::EXPIRED);
+        assert_eq!(store.get(Secret::GoogleRefreshToken), None);
     }
 }
