@@ -7,6 +7,7 @@ pub mod naming;
 pub mod percent_encoding;
 pub mod reading_order;
 pub mod recognition_languages;
+pub mod search;
 pub mod selection_geometry;
 pub mod sensitive_text;
 pub mod shortcut_words;
