@@ -152,6 +152,13 @@ impl Settings {
     /// # Errors
     /// When the file cannot be read as settings, or cannot be written.
     pub fn update(path: &Path, change: impl FnOnce(&mut Self)) -> Result<Self, String> {
+        // Both Snapline processes write this file: hold a lock across read-change-write, or one loses the other's
+        // change. The lock is released when `lock` is dropped.
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        let lock = std::fs::File::create(path.with_extension("lock")).map_err(|e| e.to_string())?;
+        lock.lock().map_err(|e| e.to_string())?;
         let (mut settings, problem) = Self::load(path);
         if let Some(problem) = problem {
             return Err(format!(
@@ -372,5 +379,36 @@ mod tests {
             ..AutoHide::default()
         };
         assert_eq!(off.categories(), []);
+    }
+
+    // Review Focus 3.
+    #[test]
+    fn concurrent_updates_keep_both_changes() {
+        let path = temp_file("lock", "");
+        let threads: Vec<_> = (0..16)
+            .map(|k| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..50 {
+                        Settings::update(&path, |s| {
+                            if k % 2 == 0 {
+                                s.s3_bucket = format!("bucket-{k}");
+                            } else {
+                                s.google_email = format!("user-{k}");
+                            }
+                        })
+                        .unwrap();
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        let saved = Settings::load(&path).0;
+        assert!(
+            saved.s3_bucket.starts_with("bucket-") && saved.google_email.starts_with("user-"),
+            "{saved:?}"
+        );
     }
 }

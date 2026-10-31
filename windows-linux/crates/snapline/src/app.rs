@@ -10,6 +10,7 @@ use crate::secrets::Keyring;
 use crate::settings::{self, Settings, TrayClick};
 use crate::upload_job::{self, CachedToken, Job, Outcome};
 use crate::window::OverlayWindow;
+use crate::worker::OnPanic;
 use chrono::Local;
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
@@ -307,6 +308,16 @@ impl App {
             let (image, scale, categories) = (o.screen.clone(), o.ui_scale, categories.clone());
             let (proxy, capture) = (self.proxy.clone(), cap.id);
             std::thread::spawn(move || {
+                let _guard = OnPanic::new({
+                    let proxy = proxy.clone();
+                    move || {
+                        let _ = proxy.send_event(UserEvent::ScanDone {
+                            capture,
+                            screen,
+                            result: Err("internal error".into()),
+                        });
+                    }
+                });
                 let faces = categories.contains(&SensitiveCategory::Face);
                 let text = categories.iter().any(|c| *c != SensitiveCategory::Face);
                 let result = recognize::system()
@@ -325,6 +336,13 @@ impl App {
     fn read_text(&self, image: snapline_overlay::tiny_skia::Pixmap) {
         let proxy = self.proxy.clone();
         std::thread::spawn(move || {
+            let _guard = OnPanic::new({
+                let proxy = proxy.clone();
+                move || {
+                    let why = "Snapline hit an internal error while reading the text.";
+                    let _ = proxy.send_event(UserEvent::TextRead(Err(why.into())));
+                }
+            });
             let (w, h) = (f64::from(image.width()), f64::from(image.height()));
             let result = recognize::system()
                 .recognize(&image, true, false)
@@ -337,10 +355,18 @@ impl App {
         let (state, close_after) = match result {
             Ok(text) if !text.trim().is_empty() => {
                 let text = text.trim_end();
-                copy_text(text);
-                let detail = actions::text_copied_detail(text);
-                let title = "Text copied".into();
-                (PopupState::Message { title, detail }, Some(2.5))
+                match copy_text(text) {
+                    Ok(()) => {
+                        let detail = actions::text_copied_detail(text);
+                        let title = "Text copied".into();
+                        (PopupState::Message { title, detail }, Some(2.5))
+                    }
+                    Err(e) => {
+                        let title = "Text not copied".into();
+                        let detail = format!("Snapline could not use the clipboard: {e}");
+                        (PopupState::Problem { title, detail }, None)
+                    }
+                }
             }
             Ok(_) => {
                 let title = "No text found".into();
@@ -463,6 +489,14 @@ impl App {
         let proxy = self.proxy.clone();
         let token = self.google_token.clone();
         std::thread::spawn(move || {
+            let _guard = OnPanic::new({
+                let proxy = proxy.clone();
+                move || {
+                    let why = "Snapline hit an internal error while uploading. Try again.";
+                    let _ =
+                        proxy.send_event(UserEvent::UploadFinished(Outcome::Failed(why.into())));
+                }
+            });
             let last = std::sync::atomic::AtomicU32::new(0);
             let report = |p: f64| {
                 let percent = (p * 100.0) as u32;
@@ -482,7 +516,10 @@ impl App {
             Outcome::Done { result, token } => {
                 self.google_token = token;
                 let link = result.page.to_string();
-                copy_text(&link);
+                // The popup shows the link with a Copy button, so a clipboard failure is only logged.
+                if let Err(e) = copy_text(&link) {
+                    eprintln!("Snapline: could not use the clipboard: {e}");
+                }
                 if let Some(engine) = self.last_job.as_ref().and_then(|j| j.search) {
                     let _ = open::that(engine.url(&result.direct).as_str());
                 }
@@ -649,8 +686,10 @@ impl App {
         };
         match button {
             PopupButton::Copy => {
-                if let Some(link) = link {
-                    copy_text(&link);
+                if let Some(link) = link
+                    && let Err(e) = copy_text(&link)
+                {
+                    eprintln!("Snapline: could not use the clipboard: {e}");
                 }
             }
             PopupButton::Open => {
@@ -673,10 +712,11 @@ impl App {
     }
 }
 
-fn copy_text(text: &str) {
-    if let Err(e) = arboard::Clipboard::new().and_then(|mut c| c.set_text(text.to_owned())) {
-        eprintln!("Snapline: could not copy the link: {e}");
-    }
+/// Puts `text` on the clipboard; the error says why it could not.
+fn copy_text(text: &str) -> Result<(), String> {
+    arboard::Clipboard::new()
+        .and_then(|mut c| c.set_text(text.to_owned()))
+        .map_err(|e| e.to_string())
 }
 
 fn cursor_icon(kind: CursorKind) -> CursorIcon {

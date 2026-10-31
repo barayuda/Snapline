@@ -20,6 +20,7 @@ mod upload_settings;
 mod window;
 #[cfg(windows)]
 mod windows_ocr;
+mod worker;
 
 use winit::event_loop::{ControlFlow, EventLoop};
 

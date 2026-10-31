@@ -1,6 +1,6 @@
 //! Windows.Media.Ocr and Windows.Media.FaceAnalysis, run on the calling (worker) thread.
 
-use crate::recognize::{Reading, Recognizer, merge};
+use crate::recognize::{Reading, Recognizer, merge, ocr_unavailable};
 use snapline_overlay::Rect;
 use snapline_overlay::scan::{Line, Word, ocr_scale};
 use snapline_overlay::tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
@@ -14,16 +14,14 @@ use windows::core::HSTRING;
 
 pub struct WindowsOcr;
 
-const NO_OCR: &str = "Windows text recognition is not set up on this PC. Add a language that includes \
-                      \"Optical character recognition\" in Settings → Time & language → Language & region.";
-
 /// The user's languages first; English when none of them has OCR (Windows has no Indonesian OCR).
 fn engine() -> Result<OcrEngine, String> {
     OcrEngine::TryCreateFromUserProfileLanguages()
         .or_else(|_| {
             OcrEngine::TryCreateFromLanguage(&Language::CreateLanguage(&HSTRING::from("en-US"))?)
         })
-        .map_err(|_| NO_OCR.to_owned())
+        // windows-core turns the null that `TryCreate…` returns when no language fits into an error with code S_OK.
+        .map_err(|e| ocr_unavailable(e.code().is_ok()).to_owned())
 }
 
 /// A Windows bitmap of `image` (BGRA; the screenshot is opaque, so premultiplied and straight are the same).

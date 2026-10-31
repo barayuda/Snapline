@@ -15,6 +15,22 @@ pub struct Reading {
     pub problem: Option<String>,
 }
 
+/// Why Windows text recognition cannot run: no OCR language (`no_language`), or OCR itself is missing.
+#[must_use]
+#[cfg_attr(
+    not(windows),
+    allow(dead_code, reason = "used by the Windows recognizer")
+)]
+pub fn ocr_unavailable(no_language: bool) -> &'static str {
+    if no_language {
+        "Windows text recognition is not set up on this PC. Add a language that includes \
+         \"Optical character recognition\" in Settings → Time & language → Language & region."
+    } else {
+        "Windows text recognition is not available on this PC. On Windows N editions, install the \
+         Media Feature Pack from Settings → Apps → Optional features."
+    }
+}
+
 pub trait Recognizer {
     /// Reads the text in `image` when `text` is true, and finds faces when `faces` is true.
     ///
@@ -173,5 +189,11 @@ mod tests {
             }
             Err(e) => eprintln!("skipped: Windows OCR is not available on this runner: {e}"),
         }
+    }
+
+    #[test]
+    fn the_ocr_message_says_what_to_do() {
+        assert!(ocr_unavailable(true).contains("Language & region"));
+        assert!(ocr_unavailable(false).contains("Media Feature Pack"));
     }
 }
