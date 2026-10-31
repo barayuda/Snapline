@@ -2,9 +2,9 @@ name: windows-linux
 
 on:
   push:
-    paths: ["windows-linux/**", "fixtures/**", ".github/workflows/windows-linux.yml"]
+    paths: ["windows-linux/**", "fixtures/**", "Assets/icon-1024.png", ".github/workflows/windows-linux.yml"]
   pull_request:
-    paths: ["windows-linux/**", "fixtures/**", ".github/workflows/windows-linux.yml"]
+    paths: ["windows-linux/**", "fixtures/**", "Assets/icon-1024.png", ".github/workflows/windows-linux.yml"]
 
 permissions:
   contents: read
@@ -40,6 +40,14 @@ jobs:
       - name: Build snapline.exe
         if: runner.os == 'Windows'
         run: cargo build --release -p snapline
+      - name: Check the exe's version info
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $want = (cargo pkgid -p snapline) -replace '.*[#@]', ''
+          $info = (Get-Item target/release/snapline.exe).VersionInfo
+          "ProductVersion=$($info.ProductVersion) ProductName=$($info.ProductName) want=$want"
+          if ($info.ProductVersion -ne $want -or $info.ProductName -ne 'Snapline') { exit 1 }
       - uses: actions/upload-artifact@v7
         if: runner.os == 'Windows'
         with:
