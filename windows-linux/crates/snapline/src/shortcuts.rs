@@ -50,6 +50,42 @@ pub fn from_event(
     from_keys(mods, name).ok_or(UNKNOWN_KEY)
 }
 
+pub const RESERVED_KEY: &str =
+    "Other apps need that shortcut (copy, paste, save, close…). Choose another one.";
+
+/// Shortcuts every Windows app relies on; taking one as a global shortcut breaks it everywhere.
+const RESERVED: [&str; 7] = [
+    "Ctrl+C", "Ctrl+V", "Ctrl+X", "Ctrl+Z", "Ctrl+A", "Ctrl+S", "Alt+F4",
+];
+
+/// What one key press does while recording.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Recorded {
+    /// Use this shortcut and stop recording.
+    Shortcut(String),
+    /// Esc: stop recording, keep the old shortcut.
+    Cancelled,
+    /// Keep recording and show why that key cannot be used.
+    TryAgain(&'static str),
+}
+
+#[must_use]
+pub fn record(key: Key, physical_key: Option<Key>, mods: Modifiers) -> Recorded {
+    if key == Key::Escape {
+        return Recorded::Cancelled;
+    }
+    match from_event(key, physical_key, mods) {
+        Ok(name) if is_reserved(&name) => Recorded::TryAgain(RESERVED_KEY),
+        Ok(name) => Recorded::Shortcut(name),
+        Err(why) => Recorded::TryAgain(why),
+    }
+}
+
+fn is_reserved(name: &str) -> bool {
+    let key = name.parse::<HotKey>().ok();
+    RESERVED.iter().any(|r| r.parse::<HotKey>().ok() == key)
+}
+
 /// Whether `name` can be a capture shortcut: free, or already one of Snapline's (the tray app holds those).
 #[must_use]
 pub fn is_free(name: &str, snapline_has: &[String]) -> bool {
@@ -131,6 +167,47 @@ mod tests {
         assert_eq!(
             from_event(Key::Exclamationmark, None, ctrl_shift),
             Err(UNKNOWN_KEY)
+        );
+    }
+
+    // Phase 5c: taking Ctrl+C or Alt+F4 would break them in every other app.
+    #[test]
+    fn common_shortcuts_are_refused() {
+        let ctrl = Modifiers {
+            ctrl: true,
+            ..Modifiers::default()
+        };
+        let alt = Modifiers {
+            alt: true,
+            ..Modifiers::default()
+        };
+        for key in [Key::C, Key::V, Key::X, Key::Z, Key::A, Key::S] {
+            assert_eq!(
+                record(key, Some(key), ctrl),
+                Recorded::TryAgain(RESERVED_KEY),
+                "{key:?}"
+            );
+        }
+        assert_eq!(
+            record(Key::F4, Some(Key::F4), alt),
+            Recorded::TryAgain(RESERVED_KEY)
+        );
+        assert_eq!(
+            record(Key::D, Some(Key::D), ctrl),
+            Recorded::Shortcut("Ctrl+D".into())
+        );
+    }
+
+    // Phase 5c (Review Focus 4): as on macOS, a key Snapline cannot use keeps recording; Esc stops it.
+    #[test]
+    fn a_key_snapline_cannot_use_keeps_recording() {
+        assert_eq!(
+            record(Key::A, Some(Key::A), Modifiers::default()),
+            Recorded::TryAgain(NEEDS_MODIFIER)
+        );
+        assert_eq!(
+            record(Key::Escape, Some(Key::Escape), Modifiers::default()),
+            Recorded::Cancelled
         );
     }
 }

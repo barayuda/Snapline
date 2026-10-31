@@ -106,6 +106,7 @@ impl UploadForm {
 }
 
 use crate::secrets::Keyring;
+use crate::shortcuts::Recorded;
 use snapline_core::sensitive_text::SensitiveCategory;
 use snapline_upload::google::{self, GoogleClient};
 use snapline_upload::http::UreqTransport;
@@ -450,7 +451,8 @@ impl SettingsApp {
         }
     }
 
-    /// While recording: the next key with Ctrl, Alt or an F-key becomes the capture shortcut; Esc cancels.
+    /// While recording: the next usable key becomes the capture shortcut; a key Snapline cannot use keeps recording
+    /// and says why; Esc cancels.
     fn record_shortcut(&mut self, ui: &eframe::egui::Ui) {
         let pressed = ui.input(|i| {
             i.events.iter().find_map(|e| match e {
@@ -467,23 +469,21 @@ impl SettingsApp {
         let Some((key, physical_key, m)) = pressed else {
             return;
         };
-        self.recording = false;
-        if key == eframe::egui::Key::Escape {
-            return;
-        }
-        let name = match crate::shortcuts::from_event(key, physical_key, m) {
-            Ok(name) => name,
-            Err(why) => {
-                self.general_error = Some(why.into());
-                return;
+        match crate::shortcuts::record(key, physical_key, m) {
+            Recorded::Cancelled => self.recording = false,
+            Recorded::TryAgain(why) => self.general_error = Some(why.into()),
+            Recorded::Shortcut(name)
+                if !crate::shortcuts::is_free(&name, &self.settings.hotkeys) =>
+            {
+                self.general_error =
+                    Some("That shortcut is used by another app. Try another one.".into());
             }
-        };
-        if !crate::shortcuts::is_free(&name, &self.settings.hotkeys) {
-            self.general_error = Some("That shortcut is used by another app.".into());
-            return;
+            Recorded::Shortcut(name) => {
+                self.recording = false;
+                let print_screen = self.settings.uses_print_screen();
+                self.save_general(|s| s.set_shortcuts(Some(name), print_screen));
+            }
         }
-        let print_screen = self.settings.uses_print_screen();
-        self.save_general(|s| s.set_shortcuts(Some(name), print_screen));
     }
 
     fn general_tab(&mut self, ui: &mut eframe::egui::Ui) {
