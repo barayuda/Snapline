@@ -1,0 +1,112 @@
+name: windows-release
+
+# A `windows-v<version>` tag builds Snapline for Windows and creates a DRAFT release; Barayuda checks it and
+# publishes it. Signing runs only once the AZURE_SIGNING_* repository variables exist (see docs/releasing-windows.md).
+on:
+  push:
+    tags: ["windows-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write # Azure sign-in through OIDC, only used when signing is set up
+    defaults:
+      run:
+        working-directory: windows-linux
+        shell: pwsh
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      signed: ${{ steps.version.outputs.signed }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - id: version
+        name: Check the tag against the crate version
+        run: |
+          $tag = "${{ github.ref_name }}" -replace '^windows-v', ''
+          $crate = (cargo pkgid -p snapline) -replace '.*[#@]', ''
+          if ($tag -ne $crate) { throw "Tag says $tag but snapline's Cargo.toml says $crate" }
+          "version=$crate" >> $env:GITHUB_OUTPUT
+          "signed=$('${{ vars.AZURE_SIGNING_ACCOUNT }}' -ne '')".ToLower() >> $env:GITHUB_OUTPUT
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo build --release -p snapline
+
+      - name: Sign in to Azure
+        if: vars.AZURE_SIGNING_ACCOUNT != ''
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign snapline.exe
+        if: vars.AZURE_SIGNING_ACCOUNT != ''
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\windows-linux\target\release\snapline.exe
+          file-digest: SHA256
+          timestamp-digest: SHA256
+
+      - name: Build the installer, zip and checksums
+        run: ./installer/package.ps1 -Version ${{ steps.version.outputs.version }}
+
+      - name: Sign the installer
+        if: vars.AZURE_SIGNING_ACCOUNT != ''
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\windows-linux\target\dist\Snapline-Setup-${{ steps.version.outputs.version }}.exe
+          file-digest: SHA256
+          timestamp-digest: SHA256
+      - name: Checksums of the signed files
+        if: vars.AZURE_SIGNING_ACCOUNT != ''
+        run: ./installer/package.ps1 -Version ${{ steps.version.outputs.version }} -SumsOnly
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: snapline-windows-release
+          path: windows-linux/target/dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: snapline-windows-release
+          path: dist
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          SIGNED: ${{ needs.build.outputs.signed }}
+        run: |
+          {
+            echo "Download **Snapline-Setup-$VERSION.exe** and run it (no admin rights needed), or use the portable zip."
+            echo
+            if [ "$SIGNED" != "true" ]; then
+              echo "This build is not signed yet, so Windows SmartScreen asks first: choose **More info**, then **Run anyway**."
+              echo
+            fi
+            echo "SHA-256:"
+            echo
+            echo '```'
+            cat dist/SHA256SUMS.txt
+            echo '```'
+          } > notes.md
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "Snapline for Windows $VERSION" --notes-file notes.md dist/*
