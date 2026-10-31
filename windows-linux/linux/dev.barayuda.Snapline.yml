@@ -18,7 +18,6 @@ finish-args:
   - --talk-name=org.freedesktop.FileManager1 # Show in folder
   - --filesystem=xdg-desktop # the default save folder
   - --filesystem=xdg-pictures
-  - --filesystem=xdg-config/autostart:create # Launch at sign-in
 modules:
   - name: leptonica
     buildsystem: cmake-ninja

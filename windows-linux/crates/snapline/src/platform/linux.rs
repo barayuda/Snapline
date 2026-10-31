@@ -46,7 +46,18 @@ pub fn session_problem_for(
 
 /// The user's runtime folder (`$XDG_RUNTIME_DIR`, private to the user), or the temp folder.
 fn runtime_dir() -> PathBuf {
-    dirs::runtime_dir().unwrap_or_else(std::env::temp_dir)
+    runtime_dir_for(
+        dirs::runtime_dir().unwrap_or_else(std::env::temp_dir),
+        std::env::var_os("FLATPAK_ID").as_deref(),
+    )
+}
+
+/// Inside Flatpak `base` is private to one `flatpak run`; `app/<id>` under it is shared by every instance of the app.
+fn runtime_dir_for(base: PathBuf, flatpak_id: Option<&OsStr>) -> PathBuf {
+    match flatpak_id {
+        Some(id) => base.join("app").join(id),
+        None => base,
+    }
 }
 
 /// Lock files held for the life of the process.
@@ -316,10 +327,11 @@ pub fn exec_line(install: &Install) -> String {
             let mut out = String::from("\"");
             for c in path.to_string_lossy().chars() {
                 match c {
-                    '"' | '`' | '$' | '\\' => {
-                        out.push('\\');
+                    '"' | '`' | '$' => {
+                        out.push_str("\\\\");
                         out.push(c);
                     }
+                    '\\' => out.push_str("\\\\\\\\"),
                     '%' => out.push_str("%%"),
                     _ => out.push(c),
                 }
@@ -330,14 +342,14 @@ pub fn exec_line(install: &Install) -> String {
     }
 }
 
-/// `~/.config/autostart`. Inside Flatpak `$XDG_CONFIG_HOME` is the sandbox's own folder, so use the real one.
+/// `~/.config/autostart`; `None` inside Flatpak, which has no access there (a sandboxed app that can write autostart
+/// entries can run any command at the next login).
 #[must_use]
 pub fn autostart_dir(install: &Install) -> Option<PathBuf> {
-    let config = match install {
-        Install::Flatpak(_) => dirs::home_dir().map(|h| h.join(".config")),
-        _ => dirs::config_dir(),
-    };
-    config.map(|c| c.join("autostart"))
+    match install {
+        Install::Flatpak(_) => None,
+        _ => dirs::config_dir().map(|c| c.join("autostart")),
+    }
 }
 
 const AUTOSTART_FILE: &str = "dev.barayuda.Snapline.desktop";
@@ -368,9 +380,21 @@ pub fn launch_at_login() -> bool {
 }
 
 pub fn set_launch_at_login(on: bool) -> Result<(), String> {
-    let install = install();
-    let dir = autostart_dir(&install).ok_or("Snapline could not find your home folder.")?;
-    set_autostart(&dir, on.then(|| exec_line(&install)).as_deref())
+    set_launch_at_login_for(&install(), on)
+}
+
+/// Turning it off in the Flatpak is a no-op: it never wrote an entry.
+pub fn set_launch_at_login_for(install: &Install, on: bool) -> Result<(), String> {
+    match (install, autostart_dir(install)) {
+        (Install::Flatpak(_), _) if !on => Ok(()),
+        (Install::Flatpak(_), _) => Err(
+            "The Flatpak cannot start itself at sign-in. Add Snapline in your desktop's startup settings \
+             (for example Settings → Session and Startup on Xfce)."
+                .into(),
+        ),
+        (_, None) => Err("Snapline could not find your home folder.".into()),
+        (_, Some(dir)) => set_autostart(&dir, on.then(|| exec_line(install)).as_deref()),
+    }
 }
 
 /// Why uploads are off when the keyring cannot be reached, and what to do.
@@ -414,10 +438,12 @@ mod tests {
     // Review Focus 4.
     #[test]
     fn exec_line_quotes_what_desktop_files_need() {
-        let plain = Install::Plain("/home/a b/Apps/100% \"snap\"$/snapline".into());
+        // Final review: the value is unescaped once as a string before Exec quoting, so `"`, `$` and `` ` `` need
+        // `\\` in the file and a backslash needs four (what GLib's key file reader accepts).
+        let plain = Install::Plain("/home/a b/Apps/100% \"snap\"$`x\\y/snapline".into());
         assert_eq!(
             exec_line(&plain),
-            r#""/home/a b/Apps/100%% \"snap\"\$/snapline""#
+            r#""/home/a b/Apps/100%% \\"snap\\"\\$\\`x\\\\y/snapline""#
         );
         assert_eq!(
             exec_line(&Install::Flatpak("dev.barayuda.Snapline".into())),
@@ -456,10 +482,15 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+    // Final review: write access to ~/.config/autostart lets a sandboxed app run any command at the next login, so
+    // the Flatpak has none and points the user at the desktop's own startup settings.
     #[test]
-    fn flatpak_autostart_goes_to_the_real_config_folder() {
-        let dir = autostart_dir(&Install::Flatpak("dev.barayuda.Snapline".into())).unwrap();
-        assert_eq!(dir, dirs::home_dir().unwrap().join(".config/autostart"));
+    fn the_flatpak_leaves_autostart_to_the_desktop() {
+        let flatpak = Install::Flatpak("dev.barayuda.Snapline".into());
+        assert_eq!(autostart_dir(&flatpak), None);
+        let error = set_launch_at_login_for(&flatpak, true).unwrap_err();
+        assert!(error.contains("startup"), "{error}");
+        assert!(set_launch_at_login_for(&flatpak, false).is_ok());
     }
 
     // Review Focus 2: i3 or a bare Xfce has no Secret Service.
@@ -473,6 +504,18 @@ mod tests {
                 && text.contains("not provided"),
             "{text}"
         );
+    }
+
+    // Final review: inside Flatpak /run/user/<uid> is private to each `flatpak run`, so a second launch did not see
+    // the first one's lock; $XDG_RUNTIME_DIR/app/<id> is shared by every instance of the app.
+    #[test]
+    fn flatpak_instances_share_one_runtime_folder() {
+        let base = PathBuf::from("/run/user/1000");
+        assert_eq!(
+            runtime_dir_for(base.clone(), Some(OsStr::new("dev.barayuda.Snapline"))),
+            Path::new("/run/user/1000/app/dev.barayuda.Snapline")
+        );
+        assert_eq!(runtime_dir_for(base.clone(), None), base);
     }
 
     #[test]

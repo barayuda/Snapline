@@ -136,6 +136,12 @@ impl LinuxTray {
     }
 }
 
+/// Whether the item asks for a bus name of its own. Flatpak's D-Bus proxy refuses that name (Snapline has no
+/// `--own-name` for it), and panels find the item without it.
+fn own_bus_name(flatpak_id: Option<&std::ffi::OsStr>) -> bool {
+    flatpak_id.is_none()
+}
+
 /// Starts the item even when no panel is up yet (login): `watcher_offline` then tells the app.
 fn spawn(
     menu: &[Entry],
@@ -146,15 +152,18 @@ fn spawn(
     let menu = menu.to_vec();
     let proxy = proxy.clone();
     let failed = |e: ksni::Error| format!("the desktop's tray service did not answer ({e})");
+    let no_name = !own_bus_name(std::env::var_os("FLATPAK_ID").as_deref());
     if menu_on_click {
         Item::<true> { menu, icon, proxy }
             .assume_sni_available(true)
+            .disable_dbus_name(no_name)
             .spawn()
             .map(Running::Menu)
             .map_err(failed)
     } else {
         Item::<false> { menu, icon, proxy }
             .assume_sni_available(true)
+            .disable_dbus_name(no_name)
             .spawn()
             .map(Running::Capture)
             .map_err(failed)
@@ -164,6 +173,14 @@ fn spawn(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Final review (Critical): Flatpak's D-Bus proxy refuses the item's own bus name, so the tray never showed.
+    #[test]
+    fn flatpak_asks_for_no_bus_name_of_its_own() {
+        use std::ffi::OsStr;
+        assert!(!own_bus_name(Some(OsStr::new("dev.barayuda.Snapline"))));
+        assert!(own_bus_name(None));
+    }
 
     #[test]
     fn argb_puts_alpha_first() {
