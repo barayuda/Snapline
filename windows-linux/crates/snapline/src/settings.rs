@@ -2,6 +2,7 @@
 //! Phase 2 only reads it; the Preferences window (Phase 5) will write it.
 
 use serde::{Deserialize, Serialize};
+use snapline_core::sensitive_text::SensitiveCategory;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -23,6 +24,52 @@ pub enum UploadTarget {
     Drive,
 }
 
+/// What auto-hide covers on every capture (the Auto-hide tab). Everything is on by default, as on macOS.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+#[allow(clippy::struct_excessive_bools)] // one tick box per category, as in the file and the Auto-hide tab
+pub struct AutoHide {
+    pub enabled: bool,
+    pub contact: bool,
+    pub payment: bool,
+    pub secret: bool,
+    pub face: bool,
+}
+
+impl Default for AutoHide {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            contact: true,
+            payment: true,
+            secret: true,
+            face: true,
+        }
+    }
+}
+
+impl AutoHide {
+    /// The categories to hide on every capture (none when auto-hide is off).
+    #[must_use]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the capture scan uses it from Task 6")
+    )]
+    pub fn categories(self) -> Vec<SensitiveCategory> {
+        if !self.enabled {
+            return Vec::new();
+        }
+        // In the order of `SensitiveCategory::ALL`: Contact, Payment, Secret, Face.
+        let on = [self.contact, self.payment, self.secret, self.face];
+        SensitiveCategory::ALL
+            .into_iter()
+            .zip(on)
+            .filter(|(_, on)| *on)
+            .map(|(c, _)| c)
+            .collect()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -42,6 +89,7 @@ pub struct Settings {
     pub google_email: String,
     /// The Snapline folder in My Drive, once created.
     pub drive_folder_id: String,
+    pub auto_hide: AutoHide,
 }
 
 impl Default for Settings {
@@ -61,6 +109,7 @@ impl Default for Settings {
             google_client_id: String::new(),
             google_email: String::new(),
             drive_folder_id: String::new(),
+            auto_hide: AutoHide::default(),
         }
     }
 }
@@ -302,5 +351,30 @@ mod tests {
         let path = temp_file("broken-update", text);
         assert!(Settings::update(&path, |s| s.s3_bucket = "x".into()).is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    }
+
+    #[test]
+    fn auto_hide_defaults_to_everything_and_reads_partial_tables() {
+        use snapline_core::sensitive_text::SensitiveCategory;
+        assert_eq!(
+            Settings::default().auto_hide.categories(),
+            SensitiveCategory::ALL
+        );
+        let path = temp_file("auto-hide", "[auto_hide]\nface = false\n");
+        let (s, problem) = Settings::load(&path);
+        assert!(problem.is_none());
+        assert_eq!(
+            s.auto_hide.categories(),
+            [
+                SensitiveCategory::Contact,
+                SensitiveCategory::Payment,
+                SensitiveCategory::Secret
+            ]
+        );
+        let off = AutoHide {
+            enabled: false,
+            ..AutoHide::default()
+        };
+        assert_eq!(off.categories(), []);
     }
 }

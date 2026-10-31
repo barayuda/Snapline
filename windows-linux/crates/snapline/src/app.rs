@@ -89,7 +89,7 @@ impl App {
             capture: None,
             started: false,
             secrets: None,
-            settings_item: MenuId::new("upload-settings"),
+            settings_item: MenuId::new("settings"),
             popup: None,
             popup_close_at: None,
             popup_hovered: false,
@@ -198,7 +198,7 @@ impl App {
                 .map_err(|e| e.to_string())?;
         }
         menu.append_items(&[
-            &MenuItem::with_id(self.settings_item.clone(), "Upload Settings…", true, None),
+            &MenuItem::with_id(self.settings_item.clone(), "Settings…", true, None),
             &PredefinedMenuItem::separator(),
             &MenuItem::with_id(self.quit.clone(), "Quit Snapline", true, None),
         ])
@@ -578,7 +578,7 @@ impl App {
                 self.close_popup();
             }
             PopupButton::Settings => {
-                platform::open_upload_settings();
+                platform::open_settings();
                 self.close_popup();
             }
             PopupButton::Retry => {
@@ -684,7 +684,7 @@ impl ApplicationHandler<UserEvent> for App {
                 });
             }
             UserEvent::Menu(id) if id == self.quit => event_loop.exit(),
-            UserEvent::Menu(id) if id == self.settings_item => platform::open_upload_settings(),
+            UserEvent::Menu(id) if id == self.settings_item => platform::open_settings(),
             UserEvent::UploadProgress(p) => {
                 self.set_tray(TrayState::Progress(p));
                 if let Some((popup, window)) = &mut self.popup

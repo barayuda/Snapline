@@ -1,8 +1,9 @@
-//! The upload settings window (the Upload tab of Preferences, brought forward to Phase 3). It runs as a second
-//! process, `snapline --upload-settings`, and shares `settings.toml` and Credential Manager with the tray app.
+//! The settings window, with the Upload and Auto-hide tabs of Preferences (brought forward; Phase 5 adds the
+//! rest). It runs as a second process, `snapline --settings`, and shares `settings.toml` and Credential Manager
+//! with the tray app.
 
 use crate::secrets::{self, Secret, SecretStore};
-use crate::settings::{Settings, UploadTarget};
+use crate::settings::{AutoHide, Settings, UploadTarget};
 use std::path::Path;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -21,6 +22,7 @@ pub struct UploadForm {
     pub signed_in: bool,
     /// The result of the last Save: text, and whether everything is in order.
     pub status: Option<(String, bool)>,
+    pub auto_hide: AutoHide,
 }
 
 impl UploadForm {
@@ -40,6 +42,7 @@ impl UploadForm {
             email: settings.google_email.clone(),
             signed_in: secrets.get(Secret::GoogleRefreshToken).is_some(),
             status: None,
+            auto_hide: settings.auto_hide,
         }
     }
 
@@ -92,9 +95,18 @@ impl UploadForm {
         };
         self.status = Some(status);
     }
+
+    /// Saves the auto-hide choices at once, as macOS does; reports only a failure.
+    pub fn save_auto_hide(&mut self, path: &Path) {
+        let choice = self.auto_hide;
+        if let Err(e) = Settings::update(path, |s| s.auto_hide = choice) {
+            self.status = Some((e, false));
+        }
+    }
 }
 
 use crate::secrets::Keyring;
+use snapline_core::sensitive_text::SensitiveCategory;
 use snapline_upload::google::{self, GoogleClient};
 use snapline_upload::http::UreqTransport;
 use std::sync::mpsc::{Receiver, channel};
@@ -107,7 +119,14 @@ const GREEN: eframe::egui::Color32 = eframe::egui::Color32::from_rgb(0x34, 0xC7,
 const ORANGE: eframe::egui::Color32 = eframe::egui::Color32::from_rgb(0xFF, 0x95, 0x00);
 const RED: eframe::egui::Color32 = eframe::egui::Color32::from_rgb(0xFF, 0x3B, 0x30);
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    Upload,
+    AutoHide,
+}
+
 struct SettingsApp {
+    tab: Tab,
     form: UploadForm,
     path: std::path::PathBuf,
     store: Keyring,
@@ -118,7 +137,7 @@ struct SettingsApp {
 
 /// Runs the window until it is closed. One window at a time.
 pub fn run_window() {
-    if !crate::platform::claim("Local\\dev.barayuda.snapline.upload-settings") {
+    if !crate::platform::claim("Local\\dev.barayuda.snapline.settings") {
         return; // ponytail: the open window is not brought to the front
     }
     let (Some(path), Ok(store)) = (Settings::path(), Keyring::open()) else {
@@ -141,12 +160,13 @@ pub fn run_window() {
     };
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
-            .with_title("Snapline upload settings")
+            .with_title("Snapline settings")
             .with_inner_size([480.0, 620.0])
             .with_icon(std::sync::Arc::new(icon)),
         ..Default::default()
     };
     let app = SettingsApp {
+        tab: Tab::Upload,
         form,
         path,
         store,
@@ -154,11 +174,11 @@ pub fn run_window() {
         google_error: None,
     };
     if let Err(e) = eframe::run_native(
-        "Snapline upload settings",
+        "Snapline settings",
         options,
         Box::new(|_| Ok(Box::new(app))),
     ) {
-        crate::platform::show_error(&format!("Snapline could not open its upload settings: {e}"));
+        crate::platform::show_error(&format!("Snapline could not open its settings: {e}"));
     }
 }
 
@@ -339,6 +359,69 @@ impl SettingsApp {
     }
 }
 
+impl SettingsApp {
+    fn upload_tab(&mut self, ui: &mut eframe::egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.selectable_value(
+                &mut self.form.target,
+                UploadTarget::S3,
+                "S3-compatible bucket",
+            );
+            ui.selectable_value(&mut self.form.target, UploadTarget::Drive, "Google Drive");
+        });
+        ui.separator();
+        match self.form.target {
+            UploadTarget::S3 => self.s3_fields(ui),
+            UploadTarget::Drive => self.drive_fields(ui),
+        }
+        ui.horizontal(|ui| {
+            if ui.button("Save").clicked() {
+                self.form.save(&self.path, &self.store);
+            }
+            if let Some((text, ok)) = &self.form.status {
+                ui.colored_label(if *ok { GREEN } else { ORANGE }, text);
+            }
+        });
+        ui.separator();
+        match self.form.target {
+            UploadTarget::S3 => {
+                ui.small("Uploads are public to anyone with the link. Do not upload guest or customer data.");
+            }
+            UploadTarget::Drive => self.account(ui),
+        }
+    }
+
+    /// Changes save at once, as on macOS.
+    fn auto_hide_tab(&mut self, ui: &mut eframe::egui::Ui) {
+        let before = self.form.auto_hide;
+        let a = &mut self.form.auto_hide;
+        ui.checkbox(
+            &mut a.enabled,
+            "Hide sensitive data automatically on every capture",
+        );
+        ui.add_space(6.0);
+        ui.label(eframe::egui::RichText::new("What to hide").strong());
+        ui.add_enabled_ui(a.enabled, |ui| {
+            ui.checkbox(&mut a.contact, SensitiveCategory::Contact.title());
+            ui.checkbox(&mut a.payment, SensitiveCategory::Payment.title());
+            ui.checkbox(&mut a.secret, SensitiveCategory::Secret.title());
+            ui.checkbox(&mut a.face, SensitiveCategory::Face.title());
+        });
+        ui.add_space(6.0);
+        ui.small(
+            "Runs on this PC only. Found items are covered with solid black boxes; click a box in the capture to \
+             show it again. This is a safety net, not a guarantee: small, faint or rotated text can be missed, so \
+             check before you share.",
+        );
+        if self.form.auto_hide != before {
+            self.form.save_auto_hide(&self.path);
+        }
+        if let Some((text, false)) = &self.form.status {
+            ui.colored_label(ORANGE, text);
+        }
+    }
+}
+
 fn field(ui: &mut eframe::egui::Ui, label: &str, value: &mut String, hint: &str, secret: bool) {
     ui.label(label);
     ui.add(
@@ -357,30 +440,14 @@ impl eframe::App for SettingsApp {
 
     fn ui(&mut self, ui: &mut eframe::egui::Ui, _frame: &mut eframe::Frame) {
         eframe::egui::CentralPanel::default().show(ui, |ui| {
-            ui.heading("Upload settings");
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.form.target, UploadTarget::S3, "S3-compatible bucket");
-                ui.selectable_value(&mut self.form.target, UploadTarget::Drive, "Google Drive");
+                ui.selectable_value(&mut self.tab, Tab::Upload, "Upload");
+                ui.selectable_value(&mut self.tab, Tab::AutoHide, "Auto-hide");
             });
             ui.separator();
-            match self.form.target {
-                UploadTarget::S3 => self.s3_fields(ui),
-                UploadTarget::Drive => self.drive_fields(ui),
-            }
-            ui.horizontal(|ui| {
-                if ui.button("Save").clicked() {
-                    self.form.save(&self.path, &self.store);
-                }
-                if let Some((text, ok)) = &self.form.status {
-                    ui.colored_label(if *ok { GREEN } else { ORANGE }, text);
-                }
-            });
-            ui.separator();
-            match self.form.target {
-                UploadTarget::S3 => {
-                    ui.small("Uploads are public to anyone with the link. Do not upload guest or customer data.");
-                }
-                UploadTarget::Drive => self.account(ui),
+            match self.tab {
+                Tab::Upload => self.upload_tab(ui),
+                Tab::AutoHide => self.auto_hide_tab(ui),
             }
         });
     }
@@ -477,5 +544,17 @@ mod tests {
             ("shots", "AKIDEXAMPLE")
         );
         assert!(!form.signed_in);
+    }
+
+    #[test]
+    fn auto_hide_changes_save_without_touching_upload_settings() {
+        let (path, store) = (temp_path("auto-hide"), MemoryStore::default());
+        s3_form().save(&path, &store);
+        let mut form = UploadForm::load(&Settings::load(&path).0, &store);
+        form.auto_hide.face = false;
+        form.save_auto_hide(&path);
+        let saved = Settings::load(&path).0;
+        assert!(!saved.auto_hide.face && saved.auto_hide.payment);
+        assert_eq!(saved.s3_bucket, "shots");
     }
 }

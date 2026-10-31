@@ -102,18 +102,15 @@ pub fn work_area(_x: i32, _y: i32) -> Option<snapline_overlay::Rect> {
     None // the caller falls back to the monitor's full area
 }
 
-/// Opens the upload settings window: this program again, as a second process.
-pub fn open_upload_settings() {
+/// Opens the settings window: this program again, as a second process.
+pub fn open_settings() {
     match std::env::current_exe() {
         Ok(exe) => {
-            if let Err(e) = std::process::Command::new(exe)
-                .arg("--upload-settings")
-                .spawn()
-            {
-                show_error(&format!("Snapline could not open its upload settings: {e}"));
+            if let Err(e) = std::process::Command::new(exe).arg("--settings").spawn() {
+                show_error(&format!("Snapline could not open its settings: {e}"));
             }
         }
-        Err(e) => show_error(&format!("Snapline could not open its upload settings: {e}")),
+        Err(e) => show_error(&format!("Snapline could not open its settings: {e}")),
     }
 }
 

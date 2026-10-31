@@ -21,7 +21,8 @@ mod window;
 use winit::event_loop::{ControlFlow, EventLoop};
 
 fn main() {
-    if std::env::args().any(|a| a == "--upload-settings") {
+    // `--upload-settings` is the Phase 3 name, kept for shortcuts made then.
+    if std::env::args().any(|a| a == "--settings" || a == "--upload-settings") {
         return upload_settings::run_window();
     }
     if !platform::claim_single_instance() {
