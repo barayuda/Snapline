@@ -1,5 +1,5 @@
 //! Text recognition on Linux: Tesseract, linked into Snapline; the English data comes with the package. Linux has
-//! no face detection yet, so a scan that asks for faces reports that, and the text boxes still stand.
+//! no face detection yet: a scan finds no faces, and Settings says so.
 
 use crate::recognize::{Reading, Recognizer, merge};
 use snapline_overlay::Rect;
@@ -10,7 +10,7 @@ use tesseract_rs::TesseractAPI;
 
 pub struct Tesseract;
 
-/// The problem a scan reports when it asked for faces.
+/// Shown under Faces in Settings → Auto-hide.
 pub const NO_FACES: &str = "Face detection is not available on Linux yet, so faces are not hidden.";
 
 /// Where the English data may be, most specific first: `$TESSDATA_PREFIX`, inside the `AppImage`, inside the Flatpak,
@@ -119,6 +119,10 @@ fn read(image: &Pixmap) -> Result<Vec<Line>, String> {
     api.init(&dir, "eng").map_err(failed)?;
     // Screens are 96 dpi or more; without this Tesseract guesses 70 and reads small text worse.
     api.set_variable("user_defined_dpi", "96").map_err(failed)?;
+    // Sauvola thresholding (2) judges each pixel by its neighbourhood. The default (Otsu, one threshold for the
+    // whole screen) let a busy wallpaper drown a window's text; Sauvola read it, and about ten times faster.
+    api.set_variable("thresholding_method", "2")
+        .map_err(failed)?;
     let (w, h) = (image.width().cast_signed(), image.height().cast_signed());
     // The screenshot is opaque, so tiny-skia's premultiplied RGBA is plain RGBA.
     api.set_image(image.data(), w, h, 4, w * 4)
@@ -131,7 +135,9 @@ impl Recognizer for Tesseract {
     fn recognize(&self, image: &Pixmap, text: bool, faces: bool) -> Result<Reading, String> {
         merge(
             text.then(|| read(image)),
-            faces.then(|| Err(NO_FACES.to_owned())),
+            // No face detector: report none rather than a failure, or every capture would say "incomplete" and a
+            // real miss would look the same. Settings says once that faces are not hidden (`NO_FACES`).
+            faces.then(|| Ok(Vec::new())),
         )
     }
 }
@@ -204,7 +210,7 @@ mod tests {
 
     /// Real Tesseract on a drawn card number. Runs wherever `tesseract-ocr-eng` is installed (CI, the VM).
     #[test]
-    fn tesseract_reads_a_card_number_and_says_faces_are_missing() {
+    fn tesseract_reads_a_card_number_and_does_not_count_faces_as_missing() {
         use snapline_overlay::Point;
         use snapline_overlay::color::BLACK;
         use snapline_overlay::text::TextFont;
@@ -229,10 +235,10 @@ mod tests {
             reading.found.lines[0].words[0].rect.x < 100.0,
             "boxes in image pixels"
         );
-        assert_eq!(reading.problem.as_deref(), Some(NO_FACES));
-        assert_eq!(
-            Tesseract.recognize(&image, false, true).err().as_deref(),
-            Some(NO_FACES)
-        );
+        // Final review: every capture said "auto-hide incomplete" (no face detector), so a real miss looked the same.
+        // Settings says once that Linux does not hide faces.
+        assert_eq!(reading.problem, None);
+        let faces_only = Tesseract.recognize(&image, false, true).unwrap();
+        assert!(faces_only.found.lines.is_empty() && faces_only.problem.is_none());
     }
 }

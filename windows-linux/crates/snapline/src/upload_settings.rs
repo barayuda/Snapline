@@ -432,6 +432,8 @@ impl SettingsApp {
             ui.checkbox(&mut a.payment, SensitiveCategory::Payment.title());
             ui.checkbox(&mut a.secret, SensitiveCategory::Secret.title());
             ui.checkbox(&mut a.face, SensitiveCategory::Face.title());
+            #[cfg(target_os = "linux")]
+            ui.label(crate::tesseract_ocr::NO_FACES);
         });
         ui.add_space(6.0);
         ui.small(
