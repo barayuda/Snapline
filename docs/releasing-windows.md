@@ -32,8 +32,8 @@ say so). The workflow signs `snapline.exe` and the installer as soon as these ex
 
 1. In Azure, create an **Artifact Signing** account and a certificate profile (identity validation is part of this).
 2. Create an app registration with a federated credential for this repository's tags
-   (`repo:barayuda/Snapline:ref:refs/tags/windows-v*`), and give it the **… Certificate Profile Signer** role
-   Signer** role on the account.
+   (`repo:barayuda/Snapline:ref:refs/tags/windows-v*`), and give it the signing role on the account (its name
+   ends in **Certificate Profile Signer**).
 3. In the repository's **Settings → Secrets and variables → Actions**:
    - variables: `AZURE_SIGNING_ENDPOINT` (for example `https://wus2.codesigning.azure.net/`),
      `AZURE_SIGNING_ACCOUNT`, `AZURE_SIGNING_PROFILE`;
