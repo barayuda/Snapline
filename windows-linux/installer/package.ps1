@@ -15,7 +15,9 @@ $Out = Resolve-Path $Out
 if (-not $SumsOnly) {
     $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
     if (Test-Path $iscc) { "Inno Setup: preinstalled" } else { "Inno Setup: installing"; choco install innosetup --no-progress -y }
-    & $iscc /Qp "/DVersion=$Version" "/DSource=$exe" "/O$Out" "$PSScriptRoot\snapline.iss"
+    # Windows' version info takes numbers only: "0.2.0-beta.1" becomes "0.2.0".
+    $fileVersion = $Version -replace '[-+].*$', ''
+    & $iscc /Qp "/DVersion=$Version" "/DFileVersion=$fileVersion" "/DSource=$exe" "/O$Out" "$PSScriptRoot\snapline.iss"
     if ($LASTEXITCODE) { throw "ISCC failed with code $LASTEXITCODE" }
     $zip = Join-Path $Out "Snapline-$Version-windows-x64.zip"
     Compress-Archive -Force -Path $exe, "$root\LICENSE.md", "$root\README.md" -DestinationPath $zip

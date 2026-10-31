@@ -8,7 +8,8 @@ you click Publish.
 ## Cut a release
 
 1. Set the version in `windows-linux/crates/snapline/Cargo.toml` (for example `0.2.0`), commit, and merge to `main`.
-2. Tag that commit and push the tag. The tag must match the version, or the workflow stops before building.
+2. Pull `main` (`git switch main && git pull`), then tag the merged commit and push the tag. The tag must match the
+   version, or the workflow stops before building.
 
    ```bash
    git tag -s windows-v0.2.0 -m "Snapline for Windows 0.2.0"
@@ -25,13 +26,17 @@ you click Publish.
    git push origin main:website
    ```
 
+If the run fails, or you need to build the same version again: delete the draft release if one was made, then delete
+the tag (`git push --delete origin windows-v0.2.0` and `git tag -d windows-v0.2.0`). Fix the problem on `main`, then
+tag again. `gh release create` stops if a release for that tag already exists.
+
 ## Turn on code signing later
 
 Until signing is set up, releases are unsigned and Windows SmartScreen asks before the first run (the release notes
 say so). The workflow signs `snapline.exe` and the installer as soon as these exist:
 
 1. In Azure, create an **Artifact Signing** account and a certificate profile (identity validation is part of this).
-2. In the repository's **Settings → Environments**, open **release** (the first release run creates it) and limit
+2. In the repository's **Settings → Environments**, open **release** (the first signed release run creates it) and limit
    it to tags matching `windows-v*`.
 3. Create an app registration with a federated credential for **GitHub Actions**, entity type **Environment**, name
    `release`; its subject is `repo:barayuda/Snapline:environment:release`. Azure matches the subject exactly, so a
@@ -42,7 +47,8 @@ say so). The workflow signs `snapline.exe` and the installer as soon as these ex
      `AZURE_SIGNING_ACCOUNT`, `AZURE_SIGNING_PROFILE`;
    - secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`.
 
-The next tag is signed. No client secret is stored: the workflow signs in with OIDC.
+The next tag is signed. No client secret is stored: the workflow signs in with OIDC. Signing runs in its own job,
+which builds nothing with cargo, so only Azure's own steps can ask for the token.
 
 ## What the installer does
 

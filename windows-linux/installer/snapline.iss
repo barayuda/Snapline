@@ -8,6 +8,9 @@
 #ifndef Source
   #error Pass /DSource=<path to snapline.exe>
 #endif
+#ifndef FileVersion
+  #define FileVersion Version
+#endif
 
 [Setup]
 AppId={{CC116E4B-B1A0-4EF8-B87C-4E9EB12E2ED1}
@@ -17,7 +20,7 @@ AppVerName=Snapline {#Version}
 AppPublisher=Barayuda
 AppPublisherURL=https://github.com/barayuda/Snapline
 AppSupportURL=https://github.com/barayuda/Snapline/issues
-VersionInfoVersion={#Version}
+VersionInfoVersion={#FileVersion}
 PrivilegesRequired=lowest
 DefaultDirName={localappdata}\Programs\Snapline
 DisableDirPage=auto

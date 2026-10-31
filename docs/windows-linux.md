@@ -29,6 +29,7 @@ app, and Preferences. The macOS app stays in Swift and keeps working as it does 
 | Windows installer | Inno Setup, per user (no admin), plus a portable zip | Simple to build on CI, no admin prompt, uninstaller and sign-in entry included. Barayuda, 31 Oct 2026 |
 | Code signing | Wired into the release workflow, switched on when an Azure Artifact Signing account exists; unsigned until then | Signing costs money and identity checks; releases need not wait for it. Barayuda, 31 Oct 2026 |
 | Where builds go | GitHub Releases: a `windows-v<version>` tag builds a draft that Barayuda publishes | One public download page; nothing is published by CI alone. Barayuda, 31 Oct 2026 |
+| Phase 5c | Proxy from Windows' manual setting and `HTTPS_PROXY`, certificates from the Windows store (no PAC/WPAD); banner says macOS and Windows; README for both; the recorder, Print/Edit/Share, tray and scan, and release minors | Fix what would hurt the first release. Barayuda, 31 Oct 2026 |
 
 ## Repo layout
 
@@ -91,6 +92,8 @@ Each phase ends with something that works on its own and has its own plan in `do
    - 5b: installer, release workflow with optional code signing, website and privacy policy updated for Windows.
      Plan: [docs/plans/2026-10-31-windows-shipping.md](plans/2026-10-31-windows-shipping.md). How to release:
      [docs/releasing-windows.md](releasing-windows.md).
+   - 5c: uploads through a proxy and the Windows certificate store, the minors users notice, safer release workflow,
+     README and banner for both platforms. Plan: [docs/plans/2026-10-31-windows-polish.md](plans/2026-10-31-windows-polish.md).
 6. **Linux X11**, then **Linux Wayland** (portals, Flatpak).
 
 ## Risks
