@@ -152,20 +152,20 @@ pub fn run_window() {
     if !crate::platform::claim("Local\\dev.barayuda.snapline.settings") {
         return; // ponytail: the open window is not brought to the front
     }
-    let (Some(path), Ok(store)) = (Settings::path(), Keyring::open()) else {
-        return crate::platform::show_error(&format!(
-            "Snapline cannot reach its settings or {}.",
-            crate::platform::SECRET_STORE
-        ));
+    let Some(path) = Settings::path() else {
+        return crate::platform::show_error("Snapline cannot find your settings folder.");
+    };
+    // Without a keyring, Settings still opens (shortcuts, save folder, auto-hide); keys cannot be saved.
+    let (store, no_keyring) = match Keyring::open() {
+        Ok(store) => (store, None),
+        Err(why) => (Keyring::unavailable(), Some(why)),
     };
     let (settings, problem) = Settings::load(&path);
     let mut form = UploadForm::load(&settings, &store);
-    form.status = problem.map(|p| {
-        (
-            format!("This file could not be read, so Save is off until it is fixed:\n{p}"),
-            false,
-        )
-    });
+    form.status = problem
+        .map(|p| format!("This file could not be read, so Save is off until it is fixed:\n{p}"))
+        .or_else(|| no_keyring.map(|why| format!("Keys cannot be saved: {why}")))
+        .map(|text| (text, false));
     let icon = eframe::egui::IconData {
         rgba: crate::icon::tray_rgba(64, crate::icon::TrayState::Normal),
         width: 64,

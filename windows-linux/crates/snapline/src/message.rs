@@ -23,7 +23,7 @@ pub fn show(text: &str) {
     }
 }
 
-/// The `--message` window: the text and OK. Enter and Escape close it too.
+/// The `--message` window: the text and OK. Enter and Escape close it too. Exits with 1 when no window opens.
 pub fn run_window(text: String) {
     use eframe::egui;
     let options = eframe::NativeOptions {
@@ -37,11 +37,15 @@ pub fn run_window(text: String) {
             })),
         ..Default::default()
     };
-    let _ = eframe::run_native(
+    let shown = eframe::run_native(
         "Snapline",
         options,
         Box::new(|_| Ok(Box::new(Message(text)))),
     );
+    // No window (no display): fail, so `show` prints the message instead.
+    if shown.is_err() {
+        std::process::exit(1);
+    }
 }
 
 struct Message(String);
