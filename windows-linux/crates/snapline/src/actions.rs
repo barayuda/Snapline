@@ -13,8 +13,13 @@ use std::sync::{Mutex, PoisonError};
 /// What a finished action did, for the confirmation popup.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Done {
-    Copied { width: u32, height: u32 },
+    Copied {
+        width: u32,
+        height: u32,
+    },
     Saved(PathBuf),
+    /// Linux: the screenshot opened in the image viewer, which prints with Ctrl+P.
+    PrintFromViewer,
 }
 
 /// Runs `command` on the image and says what it did (`None`: nothing to confirm, e.g. Save As cancelled).
@@ -67,7 +72,8 @@ pub fn run(command: Command, image: &Pixmap, settings: &Settings) -> Result<Opti
             let file = temp_png(&png(image)?, &name)?;
             platform::shell_verb("print", &file)
                 .map_err(|e| format!("Snapline could not print. {e}"))?;
-            Ok(None) // Windows shows its own print dialog
+            // Windows shows its own print dialog; Linux has no print verb, so the file opened in the image viewer.
+            Ok(cfg!(target_os = "linux").then_some(Done::PrintFromViewer))
         }
         // Uploads, Share and Copy Text are handled by the app itself; Cancel has nothing to do.
         Command::Cancel
@@ -78,10 +84,10 @@ pub fn run(command: Command, image: &Pixmap, settings: &Settings) -> Result<Opti
     }
 }
 
-/// Writes `png` to the Snapline temp folder for another app to open. Nothing deletes it but Storage Sense, Disk
-/// Cleanup or the user.
+/// Writes `png` to the Snapline temp folder for another app to open. Nothing deletes it but the user, Storage Sense
+/// or Disk Cleanup.
 pub fn temp_png(png: &[u8], name: &str) -> Result<PathBuf, String> {
-    let dir = std::env::temp_dir().join("Snapline");
+    let dir = platform::temp_dir();
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Snapline could not write a temporary file: {e}"))?;
     // Names change once a second, so Print then Edit in the same second must not share a file.
@@ -109,11 +115,9 @@ pub fn editor_to_use(settings: &Settings) -> Option<PathBuf> {
 /// Opens `file` in the chosen editor, or the default one: the `edit` verb (Paint), or `open` when PNG has none.
 fn edit(file: &Path, settings: &Settings) -> Result<(), String> {
     if let Some(editor) = editor_to_use(settings) {
-        return std::process::Command::new(editor)
-            .arg(file)
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| e.to_string());
+        let mut cmd = std::process::Command::new(editor);
+        cmd.arg(file);
+        return platform::start(cmd).map_err(|e| e.to_string());
     }
     platform::shell_verb("edit", file).or_else(|_| platform::shell_verb("open", file))
 }
@@ -220,7 +224,7 @@ mod tests {
     #[test]
     fn temp_png_writes_into_the_snapline_temp_folder() {
         let path = temp_png(b"png bytes", "Snapline test.png").unwrap();
-        assert!(path.starts_with(std::env::temp_dir().join("Snapline")));
+        assert!(path.starts_with(crate::platform::temp_dir()));
         assert_eq!(std::fs::read(&path).unwrap(), b"png bytes");
         std::fs::remove_file(path).unwrap();
     }
@@ -272,6 +276,13 @@ mod tests {
             arboard::Clipboard::new().unwrap().get_text().unwrap(),
             "4111 1111"
         );
+    }
+
+    // Two users of one PC must not share /tmp/Snapline: the second could not write there.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_temp_copies_stay_in_the_users_cache() {
+        assert!(crate::platform::temp_dir().starts_with(dirs::cache_dir().unwrap()));
     }
 
     #[test]

@@ -518,6 +518,10 @@ impl App {
             actions::Done::Copied { width, height } => {
                 ("Screenshot copied", format!("{width} × {height} pixels"))
             }
+            actions::Done::PrintFromViewer => (
+                "Opened for printing",
+                "Press Ctrl+P in the image viewer to print.".to_owned(),
+            ),
             actions::Done::Saved(path) => (
                 "Screenshot saved",
                 path.file_name().map_or_else(

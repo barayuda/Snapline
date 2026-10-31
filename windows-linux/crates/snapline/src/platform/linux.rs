@@ -4,6 +4,7 @@ use std::ffi::OsStr;
 use std::fs::File;
 use std::os::unix::net::UnixDatagram;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::{Mutex, PoisonError};
 
 use snapline_overlay::Rect;
@@ -230,6 +231,148 @@ pub fn take_focus(window: &winit::window::Window) {
 /// Popups are override-redirect on X11 (`popup_window.rs`): no window manager focuses them or lists them.
 pub fn never_activate(_window: &winit::window::Window) {}
 
+fn missing_tool(program: &str, e: &std::io::Error) -> String {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        format!("{program} is missing. Install the xdg-utils package.")
+    } else {
+        format!("{program} did not start: {e}")
+    }
+}
+
+fn xdg_open(path: &Path) -> Result<(), String> {
+    let mut cmd = Command::new("xdg-open");
+    cmd.arg(path);
+    super::start(cmd).map_err(|e| missing_tool("xdg-open", &e))
+}
+
+/// Linux has no "edit" or "print" verbs: every verb opens `file` in the default app for PNG images.
+pub fn shell_verb(_verb: &str, file: &Path) -> Result<(), String> {
+    xdg_open(file)
+}
+
+/// `file` as a `file://` URI.
+pub fn file_uri(file: &Path) -> Result<String, String> {
+    url::Url::from_file_path(file)
+        .map(String::from)
+        .map_err(|()| format!("{} is not a full path", file.display()))
+}
+
+/// Shows `file` selected in the file manager (`org.freedesktop.FileManager1`: Nautilus, Dolphin, Nemo, Caja,
+/// Thunar); opens its folder when the file manager does not offer that.
+pub fn reveal(file: &Path) {
+    let selected = file_uri(file).and_then(|uri| {
+        let bus = zbus::blocking::Connection::session().map_err(|e| e.to_string())?;
+        bus.call_method(
+            Some("org.freedesktop.FileManager1"),
+            "/org/freedesktop/FileManager1",
+            Some("org.freedesktop.FileManager1"),
+            "ShowItems",
+            &(vec![uri.as_str()], ""),
+        )
+        .map(drop)
+        .map_err(|e| e.to_string())
+    });
+    if selected.is_err()
+        && let Some(dir) = file.parent()
+        && let Err(e) = xdg_open(dir)
+    {
+        eprintln!("Snapline: could not show {}: {e}", file.display());
+    }
+}
+
+/// A new email with `file` attached. Inside Flatpak, `xdg-email` goes through the Email portal.
+pub fn email(file: &Path, subject: &str) -> Result<(), String> {
+    let mut cmd = Command::new("xdg-email");
+    cmd.args(["--subject", subject, "--attach"]).arg(file);
+    super::start(cmd).map_err(|e| missing_tool("xdg-email", &e))
+}
+
+/// How Snapline was installed, which decides the command that starts it at login.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Install {
+    Flatpak(String),
+    AppImage(PathBuf),
+    /// The .deb, or a build run in place.
+    Plain(PathBuf),
+}
+
+#[must_use]
+pub fn install() -> Install {
+    if let Some(id) = std::env::var_os("FLATPAK_ID") {
+        return Install::Flatpak(id.to_string_lossy().into_owned());
+    }
+    if let Some(path) = std::env::var_os("APPIMAGE") {
+        return Install::AppImage(path.into());
+    }
+    Install::Plain(std::env::current_exe().unwrap_or_else(|_| "snapline".into()))
+}
+
+/// The `Exec=` value. Inside quotes the desktop entry spec wants `"`, `` ` ``, `$` and `\` escaped, and `%` doubled.
+#[must_use]
+pub fn exec_line(install: &Install) -> String {
+    match install {
+        Install::Flatpak(id) => format!("flatpak run {id}"),
+        Install::AppImage(path) | Install::Plain(path) => {
+            let mut out = String::from("\"");
+            for c in path.to_string_lossy().chars() {
+                match c {
+                    '"' | '`' | '$' | '\\' => {
+                        out.push('\\');
+                        out.push(c);
+                    }
+                    '%' => out.push_str("%%"),
+                    _ => out.push(c),
+                }
+            }
+            out.push('"');
+            out
+        }
+    }
+}
+
+/// `~/.config/autostart`. Inside Flatpak `$XDG_CONFIG_HOME` is the sandbox's own folder, so use the real one.
+#[must_use]
+pub fn autostart_dir(install: &Install) -> Option<PathBuf> {
+    let config = match install {
+        Install::Flatpak(_) => dirs::home_dir().map(|h| h.join(".config")),
+        _ => dirs::config_dir(),
+    };
+    config.map(|c| c.join("autostart"))
+}
+
+const AUTOSTART_FILE: &str = "dev.barayuda.Snapline.desktop";
+
+/// Writes (`Some(exec)`) or removes (`None`) Snapline's autostart entry in `dir`.
+pub fn set_autostart(dir: &Path, exec: Option<&str>) -> Result<(), String> {
+    let file = dir.join(AUTOSTART_FILE);
+    let done = match exec {
+        Some(exec) => std::fs::create_dir_all(dir).and_then(|()| {
+            std::fs::write(
+                &file,
+                format!(
+                    "[Desktop Entry]\nType=Application\nName=Snapline\nExec={exec}\nIcon=dev.barayuda.Snapline\n\
+                     Terminal=false\nX-GNOME-Autostart-enabled=true\n"
+                ),
+            )
+        }),
+        None => match std::fs::remove_file(&file) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            other => other,
+        },
+    };
+    done.map_err(|e| format!("Snapline could not change {}: {e}", file.display()))
+}
+
+pub fn launch_at_login() -> bool {
+    autostart_dir(&install()).is_some_and(|d| d.join(AUTOSTART_FILE).is_file())
+}
+
+pub fn set_launch_at_login(on: bool) -> Result<(), String> {
+    let install = install();
+    let dir = autostart_dir(&install).ok_or("Snapline could not find your home folder.")?;
+    set_autostart(&dir, on.then(|| exec_line(&install)).as_deref())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,6 +400,57 @@ mod tests {
         beep();
         // Xvfb has no window manager, so no _NET_WORKAREA: the popup falls back to the whole monitor.
         assert_eq!(work_area(0, 0), None);
+    }
+
+    // Review Focus 4.
+    #[test]
+    fn exec_line_quotes_what_desktop_files_need() {
+        let plain = Install::Plain("/home/a b/Apps/100% \"snap\"$/snapline".into());
+        assert_eq!(
+            exec_line(&plain),
+            r#""/home/a b/Apps/100%% \"snap\"\$/snapline""#
+        );
+        assert_eq!(
+            exec_line(&Install::Flatpak("dev.barayuda.Snapline".into())),
+            "flatpak run dev.barayuda.Snapline"
+        );
+        let appimage = Install::AppImage("/home/me/Snapline-0.1.0-x86_64.AppImage".into());
+        assert_eq!(
+            exec_line(&appimage),
+            "\"/home/me/Snapline-0.1.0-x86_64.AppImage\""
+        );
+    }
+
+    // Review Focus 4.
+    #[test]
+    fn file_uris_escape_spaces() {
+        assert_eq!(
+            file_uri(Path::new("/home/a b/Snapline 2026-11-01 at 10.00.00.png")).unwrap(),
+            "file:///home/a%20b/Snapline%202026-11-01%20at%2010.00.00.png"
+        );
+        assert!(file_uri(Path::new("relative.png")).is_err());
+    }
+
+    #[test]
+    fn launch_at_login_writes_and_removes_one_entry() {
+        let dir = scratch("autostart");
+        set_autostart(&dir, Some("\"/usr/bin/snapline\"")).unwrap();
+        let entry = std::fs::read_to_string(dir.join("dev.barayuda.Snapline.desktop")).unwrap();
+        assert!(
+            entry.starts_with("[Desktop Entry]\n")
+                && entry.contains("\nExec=\"/usr/bin/snapline\"\n"),
+            "{entry}"
+        );
+        set_autostart(&dir, None).unwrap();
+        set_autostart(&dir, None).unwrap(); // already off: still fine
+        assert!(!dir.join("dev.barayuda.Snapline.desktop").exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn flatpak_autostart_goes_to_the_real_config_folder() {
+        let dir = autostart_dir(&Install::Flatpak("dev.barayuda.Snapline".into())).unwrap();
+        assert_eq!(dir, dirs::home_dir().unwrap().join(".config/autostart"));
     }
 
     #[test]

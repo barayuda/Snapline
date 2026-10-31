@@ -1,9 +1,11 @@
-//! The Windows Share window for a capture (Email on macOS). Share needs a window of ours, and the overlay is
-//! closed by then, so `open` makes a small one and keeps it while Share is up.
+//! The Windows Share window for a capture; on Linux a new email with the capture attached (Email on macOS).
+//! Windows' Share needs a window of ours, and the overlay is closed by then, so `open` makes a small one and keeps
+//! it while Share is up.
 
 use std::path::Path;
 use std::time::{Duration, Instant};
 use winit::event_loop::ActiveEventLoop;
+#[cfg(windows)]
 use winit::window::Window;
 
 /// How long the helper window stays at most, in case Share never reports that it closed.
@@ -14,6 +16,7 @@ pub struct Open {
     pub until: Instant,
     #[cfg(windows)]
     _sharing: windows_share::Sharing,
+    #[cfg(windows)]
     _window: Window,
 }
 
@@ -47,7 +50,15 @@ pub fn open(
             _window: window,
         })
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        let _ = (event_loop, on_closed, KEEP);
+        crate::platform::email(file, title)?;
+        Ok(Open {
+            until: Instant::now(), // nothing to keep open
+        })
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = (event_loop, file, title, on_closed, KEEP);
         Err("Share is not available on this system yet".into())

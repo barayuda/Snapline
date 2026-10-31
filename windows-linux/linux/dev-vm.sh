@@ -15,7 +15,7 @@ setup)
   in_vm 'command -v cargo >/dev/null || curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal'
   ;;
 desktop)
-  in_vm 'sudo apt-get install -y xfce4 xfce4-terminal tigervnc-standalone-server gnome-keyring'
+  in_vm 'sudo apt-get install -y xfce4 xfce4-terminal tigervnc-standalone-server gnome-keyring xdg-utils' # OrbStack's own xdg-open opens files on the Mac; start apps with PATH=/usr/bin:$PATH
   echo "1. Set a VNC password:  orb -m $vm vncpasswd"
   echo "2. Start the desktop:   orb -m $vm vncserver :1 -localhost no -xstartup startxfce4"
   echo "3. In Finder: Go → Connect to Server → vnc://$vm.orb.local:5901"

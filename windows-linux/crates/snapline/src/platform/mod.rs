@@ -7,8 +7,9 @@ mod linux;
 pub use linux::take_focus;
 #[cfg(target_os = "linux")]
 pub use linux::{
-    announce_settings_changed, beep, claim, cursor_position, never_activate, session_problem,
-    watch_settings, work_area,
+    announce_settings_changed, beep, claim, cursor_position, email, launch_at_login,
+    never_activate, reveal, session_problem, set_launch_at_login, shell_verb, watch_settings,
+    work_area,
 };
 
 /// Why Snapline cannot run in this session; other systems always can.
@@ -156,8 +157,8 @@ pub fn shell_verb(verb: &str, file: &std::path::Path) -> Result<(), String> {
     }
 }
 
-/// Elsewhere only "open" works (for trying the app on a Mac or Linux).
-#[cfg(not(windows))]
+/// Elsewhere only "open" works (for trying the app on a Mac).
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn shell_verb(verb: &str, file: &std::path::Path) -> Result<(), String> {
     match verb {
         "open" | "edit" => open::that(file).map_err(|e| e.to_string()),
@@ -166,6 +167,7 @@ pub fn shell_verb(verb: &str, file: &std::path::Path) -> Result<(), String> {
 }
 
 /// Shows `file` in Explorer, selected (elsewhere: opens its folder).
+#[cfg(not(target_os = "linux"))]
 pub fn reveal(file: &std::path::Path) {
     #[cfg(windows)]
     let shown = {
@@ -320,6 +322,7 @@ pub fn startup_approved(value: Option<&[u8]>) -> bool {
 /// Whether Windows starts this Snapline at sign-in: the `Run` value names this exe, and Task Manager has not
 /// turned it off.
 #[must_use]
+#[cfg(not(target_os = "linux"))]
 pub fn launch_at_login() -> bool {
     #[cfg(windows)]
     {
@@ -337,6 +340,7 @@ pub fn launch_at_login() -> bool {
 ///
 /// # Errors
 /// When Windows refuses the change; the error is for the user.
+#[cfg(not(target_os = "linux"))]
 pub fn set_launch_at_login(on: bool) -> Result<(), String> {
     #[cfg(windows)]
     {
@@ -352,7 +356,7 @@ pub fn set_launch_at_login(on: bool) -> Result<(), String> {
     #[cfg(not(windows))]
     {
         let _ = on;
-        Err("Launch at sign-in is only available on Windows for now.".into())
+        Err("Launch at sign-in is only available on Windows and Linux for now.".into())
     }
 }
 
@@ -574,6 +578,29 @@ fn add_ex_style(window: &winit::window::Window, flags: u32) {
             style | isize::try_from(flags).unwrap_or_default(),
         );
     }
+}
+
+/// Starts `command` without waiting for it. A thread waits instead, so finished programs do not linger.
+///
+/// # Errors
+/// When the program cannot start (missing, not allowed).
+pub fn start(mut command: std::process::Command) -> std::io::Result<()> {
+    let mut child = command.spawn()?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
+/// Where Edit, Share and Print put their copy of the screenshot. On Linux that is the user's cache
+/// (`~/.cache/Snapline/temp`): `/tmp/Snapline` would be shared by every user of the PC.
+#[must_use]
+pub fn temp_dir() -> std::path::PathBuf {
+    #[cfg(target_os = "linux")]
+    if let Some(cache) = dirs::cache_dir() {
+        return cache.join("Snapline").join("temp");
+    }
+    std::env::temp_dir().join("Snapline")
 }
 
 #[cfg(test)]

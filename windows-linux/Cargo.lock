@@ -4311,6 +4311,7 @@ dependencies = [
  "winresource",
  "x11rb",
  "xcap",
+ "zbus",
 ]
 
 [[package]]

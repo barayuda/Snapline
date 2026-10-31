@@ -33,6 +33,7 @@ tray-icon = "0.26.1"
 [target.'cfg(target_os = "linux")'.dependencies]
 ksni = { version = "0.3.7", default-features = false, features = ["blocking", "async-io"] }
 x11rb = "0.13.2"
+zbus = { version = "5.19", default-features = false, features = ["blocking-api", "async-io"] }
 
 [target."cfg(windows)".dependencies]
 windows = { version = "0.62", features = ["Media_Ocr", "Media_FaceAnalysis", "Graphics_Imaging", "Storage_Streams", "Globalization", "Foundation_Collections", "Win32_System_WinRT", "ApplicationModel_DataTransfer", "Storage", "Win32_UI_Shell"] }
