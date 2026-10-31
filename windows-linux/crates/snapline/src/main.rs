@@ -12,6 +12,8 @@ mod capture;
 mod icon;
 #[cfg(target_os = "linux")]
 mod linux_tray;
+#[cfg(target_os = "linux")]
+mod message;
 mod platform;
 mod popup_window;
 mod recognize;
@@ -33,6 +35,10 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "--version") {
         return println!("Snapline {}", env!("CARGO_PKG_VERSION"));
+    }
+    #[cfg(target_os = "linux")]
+    if let Some(text) = message::parse(&args) {
+        return message::run_window(text);
     }
     if let Some(problem) = platform::session_problem() {
         return platform::show_error(problem);

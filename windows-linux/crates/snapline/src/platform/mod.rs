@@ -4,7 +4,7 @@
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
-pub use linux::session_problem;
+pub use linux::{announce_settings_changed, claim, session_problem, watch_settings};
 
 /// Why Snapline cannot run in this session; other systems always can.
 #[cfg(not(target_os = "linux"))]
@@ -31,9 +31,9 @@ pub fn claim(name: &str) -> bool {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn claim(_name: &str) -> bool {
-    true // ponytail: no check off Windows yet; Linux gets one in Phase 6
+    true
 }
 
 #[cfg(windows)]
@@ -66,6 +66,9 @@ pub fn cursor_position() -> Option<(i32, i32)> {
 
 /// A message box (blocks until closed).
 pub fn show_error(message: &str) {
+    #[cfg(target_os = "linux")]
+    crate::message::show(message);
+    #[cfg(not(target_os = "linux"))]
     rfd::MessageDialog::new()
         .set_level(rfd::MessageLevel::Error)
         .set_title("Snapline")
@@ -76,6 +79,9 @@ pub fn show_error(message: &str) {
 
 /// An information box (blocks until closed).
 pub fn show_info(message: &str) {
+    #[cfg(target_os = "linux")]
+    crate::message::show(message);
+    #[cfg(not(target_os = "linux"))]
     rfd::MessageDialog::new()
         .set_level(rfd::MessageLevel::Info)
         .set_title("Snapline")
@@ -455,6 +461,7 @@ mod run_key {
 pub const SETTINGS_CHANGED: &str = "Local\\dev.barayuda.snapline.settings-changed";
 
 /// Calls `notify` each time the settings window saves a change (it sets `SETTINGS_CHANGED`). Windows only.
+#[cfg(not(target_os = "linux"))]
 pub fn watch_settings(notify: impl Fn() + Send + 'static) {
     #[cfg(windows)]
     {
@@ -483,6 +490,7 @@ pub fn watch_settings(notify: impl Fn() + Send + 'static) {
 }
 
 /// Tells the tray app that `settings.toml` changed. Nothing happens when the tray app is not running.
+#[cfg(not(target_os = "linux"))]
 pub fn announce_settings_changed() {
     #[cfg(windows)]
     {

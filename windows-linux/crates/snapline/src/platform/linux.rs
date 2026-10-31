@@ -1,6 +1,10 @@
 //! Linux (X11) versions of the platform calls. `platform/mod.rs` re-exports them.
 
 use std::ffi::OsStr;
+use std::fs::File;
+use std::os::unix::net::UnixDatagram;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
 
 /// Said on Wayland: 6a supports X11 sessions only.
 pub const WAYLAND: &str = "Snapline for Linux needs an X11 session for now; Wayland support is coming. Log out, \
@@ -34,9 +38,102 @@ pub fn session_problem_for(
     }
 }
 
+/// The user's runtime folder (`$XDG_RUNTIME_DIR`, private to the user), or the temp folder.
+fn runtime_dir() -> PathBuf {
+    dirs::runtime_dir().unwrap_or_else(std::env::temp_dir)
+}
+
+/// Lock files held for the life of the process.
+static HELD: Mutex<Vec<File>> = Mutex::new(Vec::new());
+
+/// `name` is the Windows mutex name (`Local\dev.barayuda.snapline`); its last part names the lock file.
+pub fn claim(name: &str) -> bool {
+    let file = name.rsplit('\\').next().unwrap_or(name);
+    claim_at(&runtime_dir().join(format!("{file}.lock")))
+}
+
+/// False when another process holds the lock on `path`. When no lock can be made at all, Snapline runs.
+pub fn claim_at(path: &Path) -> bool {
+    let Ok(file) = File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(path)
+    else {
+        return true;
+    };
+    match file.try_lock() {
+        Ok(()) => {
+            HELD.lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(file);
+            true
+        }
+        Err(std::fs::TryLockError::WouldBlock) => false,
+        Err(std::fs::TryLockError::Error(_)) => true,
+    }
+}
+
+const SETTINGS_SOCKET: &str = "dev.barayuda.snapline.settings.sock";
+
+pub fn watch_settings(notify: impl Fn() + Send + 'static) {
+    watch_at(&runtime_dir().join(SETTINGS_SOCKET), notify);
+}
+
+pub fn announce_settings_changed() {
+    announce_at(&runtime_dir().join(SETTINGS_SOCKET));
+}
+
+/// Calls `notify` for every datagram sent to `path`. Only the tray app listens, and it holds the claim, so a socket
+/// file left behind by a crash is safe to replace.
+pub fn watch_at(path: &Path, notify: impl Fn() + Send + 'static) {
+    let _ = std::fs::remove_file(path);
+    let Ok(socket) = UnixDatagram::bind(path) else {
+        eprintln!("Snapline: settings changes will apply after a restart");
+        return;
+    };
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 16];
+        while socket.recv(&mut buf).is_ok() {
+            notify();
+        }
+    });
+}
+
+/// Nothing happens when the tray app is not running.
+pub fn announce_at(path: &Path) {
+    if let Ok(socket) = UnixDatagram::unbound() {
+        let _ = socket.send_to(b"settings", path);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("snapline-{name}-{}", std::process::id()))
+    }
+
+    #[test]
+    fn only_the_first_claim_wins() {
+        let path = scratch("claim.lock");
+        assert!(claim_at(&path));
+        assert!(!claim_at(&path), "a second Snapline must stop");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn an_announcement_reaches_the_watcher() {
+        let path = scratch("settings.sock");
+        let (tx, rx) = std::sync::mpsc::channel();
+        watch_at(&path, move || {
+            let _ = tx.send(());
+        });
+        announce_at(&path);
+        assert!(rx.recv_timeout(std::time::Duration::from_secs(5)).is_ok());
+        let _ = std::fs::remove_file(path);
+    }
 
     // Review Focus 5: XWayland sees only X11 apps, so a capture on Wayland would come out black.
     #[test]
