@@ -134,7 +134,7 @@ pub fn never_activate(window: &winit::window::Window) {
         SetWindowLongPtrW(
             hwnd,
             GWL_EXSTYLE,
-            style | isize::from((WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW).cast_signed()),
+            style | isize::try_from(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW).unwrap_or_default(),
         );
     }
 }
