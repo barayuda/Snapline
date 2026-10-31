@@ -2,13 +2,14 @@
 
 use crate::actions;
 use crate::capture;
-use crate::icon::{self, TrayState};
+use crate::icon::TrayState;
 use crate::platform::{self, show_error};
 use crate::popup_window::PopupWindow;
 use crate::recognize;
 use crate::secrets::Keyring;
 use crate::settings::{self, Settings, TrayClick};
 use crate::share;
+use crate::tray::{self, MenuAction, Tray};
 use crate::upload_job::{self, CachedToken, Job, Outcome};
 use crate::window::OverlayWindow;
 use crate::worker::OnPanic;
@@ -26,8 +27,6 @@ use snapline_overlay::{Point, Rect};
 use snapline_upload::http::UreqTransport;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
-use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{MouseButton, MouseScrollDelta, WindowEvent};
@@ -39,8 +38,15 @@ pub enum UserEvent {
     HotKey,
     /// Capture after the tray menu has faded out (sent shortly after a menu click).
     CaptureNow,
-    Menu(MenuId),
-    Tray(TrayIconEvent),
+    Menu(MenuAction),
+    /// A left click on the tray icon (a screenshot when the setting says so).
+    TrayClicked,
+    /// The desktop shows no tray icons.
+    #[cfg_attr(
+        not(target_os = "linux"),
+        allow(dead_code, reason = "only the Linux tray reports a missing panel")
+    )]
+    TrayMissing,
     UploadProgress(f64),
     UploadFinished(Outcome),
     /// Auto-hide finished reading screen `screen` of capture `capture`: its boxes, or why it could not run.
@@ -67,14 +73,18 @@ struct Capture {
     mods: Mods,
 }
 
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent flags of the running app, not a state machine"
+)]
 pub struct App {
     proxy: EventLoopProxy<UserEvent>,
     settings: Settings,
     font: TextFont,
-    tray: Option<TrayIcon>,
-    take: MenuId,
-    quit: MenuId,
-    why: MenuId,
+    tray: Option<Tray>,
+    /// The shortcuts that work now, by label.
+    labels: Vec<String>,
+    told_tray_missing: bool,
     /// Why some shortcuts did not register, shown from the tray menu.
     shortcut_note: Option<String>,
     hotkeys: Option<GlobalHotKeyManager>,
@@ -83,7 +93,6 @@ pub struct App {
     capture: Option<Capture>,
     started: bool,
     secrets: Option<Keyring>,
-    settings_item: MenuId,
     popup: Option<(Popup, PopupWindow)>,
     popup_close_at: Option<Instant>,
     popup_hovered: bool,
@@ -106,16 +115,14 @@ impl App {
             settings: Settings::default(),
             font: TextFont::system(),
             tray: None,
-            take: MenuId::new("take"),
-            quit: MenuId::new("quit"),
-            why: MenuId::new("why"),
+            labels: Vec::new(),
+            told_tray_missing: false,
             shortcut_note: None,
             hotkeys: None,
             registered: Vec::new(),
             capture: None,
             started: false,
             secrets: None,
-            settings_item: MenuId::new("settings"),
             popup: None,
             popup_close_at: None,
             popup_hovered: false,
@@ -154,18 +161,6 @@ impl App {
                 let _ = p.send_event(UserEvent::HotKey);
             }
         }));
-        let proxy = Mutex::new(self.proxy.clone());
-        MenuEvent::set_event_handler(Some(move |e: MenuEvent| {
-            if let Ok(p) = proxy.lock() {
-                let _ = p.send_event(UserEvent::Menu(e.id));
-            }
-        }));
-        let proxy = Mutex::new(self.proxy.clone());
-        TrayIconEvent::set_event_handler(Some(move |e: TrayIconEvent| {
-            if let Ok(p) = proxy.lock() {
-                let _ = p.send_event(UserEvent::Tray(e));
-            }
-        }));
 
         let proxy = self.proxy.clone();
         platform::watch_settings(move || {
@@ -173,10 +168,7 @@ impl App {
         });
 
         let labels = self.register_hotkeys();
-        match self.build_tray(&labels) {
-            Ok(tray) => self.tray = Some(tray),
-            Err(e) => show_error(&format!("Snapline could not add its tray icon: {e}")),
-        }
+        self.add_tray(&labels);
     }
 
     /// Registers every configured shortcut it can, and returns the labels of those that worked.
@@ -217,10 +209,12 @@ impl App {
         {
             show_error(note);
         }
-        working
+        let labels: Vec<String> = working
             .iter()
             .map(|n| settings::shortcut_label(n))
-            .collect()
+            .collect();
+        self.labels.clone_from(&labels);
+        labels
     }
 
     /// The settings window saved a change: re-read the file, register the shortcuts again and update the tray
@@ -233,64 +227,42 @@ impl App {
         }
         self.settings = settings;
         let labels = self.register_hotkeys();
+        let (menu, menu_on_click) = (
+            self.menu(&labels),
+            self.settings.tray_click == TrayClick::Menu,
+        );
         // Change the existing icon: a new one may land in the overflow, away from where the user pinned it.
-        if let Some(tray) = &self.tray {
-            match self.build_menu(&labels) {
-                Ok(menu) => {
-                    tray.set_menu(Some(Box::new(menu)));
-                    tray.set_show_menu_on_left_click(self.settings.tray_click == TrayClick::Menu);
+        match &mut self.tray {
+            Some(tray) => {
+                if let Err(e) = tray.set_menu(&menu, menu_on_click) {
+                    show_error(&format!("Snapline could not update its tray menu: {e}"));
                 }
-                Err(e) => show_error(&format!("Snapline could not update its tray menu: {e}")),
             }
-        } else {
-            match self.build_tray(&labels) {
-                Ok(tray) => self.tray = Some(tray),
-                Err(e) => show_error(&format!("Snapline could not add its tray icon: {e}")),
-            }
+            None => self.add_tray(&labels),
         }
     }
 
-    fn build_menu(&self, labels: &[String]) -> Result<Menu, String> {
-        let title = if labels.is_empty() {
-            "Take Screenshot".to_owned()
-        } else {
-            format!("Take Screenshot\t{}", labels.join(", "))
-        };
-        let menu = Menu::new();
-        menu.append(&MenuItem::with_id(self.take.clone(), title, true, None))
-            .map_err(|e| e.to_string())?;
-        if self.shortcut_note.is_some() && !labels.is_empty() {
-            let failed: Vec<String> = self
-                .settings
+    /// The tray menu for the shortcuts that work (`labels`) and those that failed.
+    fn menu(&self, labels: &[String]) -> Vec<tray::Entry> {
+        let failed: Vec<String> = if self.shortcut_note.is_some() {
+            self.settings
                 .hotkeys
                 .iter()
                 .map(|n| settings::shortcut_label(n))
                 .filter(|l| !labels.contains(l))
-                .collect();
-            let why = format!("Why doesn't {} work?", failed.join(" or "));
-            menu.append(&MenuItem::with_id(self.why.clone(), why, true, None))
-                .map_err(|e| e.to_string())?;
-        }
-        menu.append_items(&[
-            &MenuItem::with_id(self.settings_item.clone(), "Settings…", true, None),
-            &PredefinedMenuItem::separator(),
-            &MenuItem::with_id(self.quit.clone(), "Quit Snapline", true, None),
-        ])
-        .map_err(|e| e.to_string())?;
-        Ok(menu)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        tray::menu(labels, &failed)
     }
 
-    fn build_tray(&self, labels: &[String]) -> Result<TrayIcon, String> {
-        let menu = self.build_menu(labels)?;
-        let icon = Icon::from_rgba(icon::tray_rgba(32, icon::TrayState::Normal), 32, 32)
-            .map_err(|e| e.to_string())?;
-        TrayIconBuilder::new()
-            .with_icon(icon)
-            .with_tooltip("Snapline")
-            .with_menu(Box::new(menu))
-            .with_menu_on_left_click(self.settings.tray_click == TrayClick::Menu)
-            .build()
-            .map_err(|e| e.to_string())
+    fn add_tray(&mut self, labels: &[String]) {
+        let menu_on_click = self.settings.tray_click == TrayClick::Menu;
+        match Tray::new(&self.menu(labels), menu_on_click, self.proxy.clone()) {
+            Ok(tray) => self.tray = Some(tray),
+            Err(e) => show_error(&format!("Snapline could not add its tray icon: {e}")),
+        }
     }
 
     fn open_capture(&mut self, event_loop: &ActiveEventLoop) {
@@ -647,11 +619,8 @@ impl App {
     }
 
     fn set_tray(&self, state: TrayState) {
-        if let (Some(tray), Ok(icon)) = (
-            &self.tray,
-            Icon::from_rgba(icon::tray_rgba(32, state), 32, 32),
-        ) {
-            let _ = tray.set_icon(Some(icon));
+        if let Some(tray) = &self.tray {
+            tray.set_state(state);
         }
     }
 
@@ -662,14 +631,7 @@ impl App {
         state: PopupState,
         close_after: Option<f64>,
     ) {
-        let anchor = self.tray.as_ref().and_then(TrayIcon::rect).map(|r| {
-            Rect::new(
-                r.position.x,
-                r.position.y,
-                f64::from(r.size.width),
-                f64::from(r.size.height),
-            )
-        });
+        let anchor = self.tray.as_ref().and_then(Tray::rect);
         let centre = anchor.map_or((0, 0), |a| {
             ((a.x + a.width / 2.0) as i32, (a.y + a.height / 2.0) as i32)
         });
@@ -913,16 +875,16 @@ impl ApplicationHandler<UserEvent> for App {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
             UserEvent::HotKey | UserEvent::CaptureNow => self.open_capture(event_loop),
-            UserEvent::Menu(id) if id == self.take => {
-                // Windows fades the clicked menu item out; capturing at once would put it in the image.
+            UserEvent::Menu(MenuAction::Take) => {
+                // The clicked menu fades out; capturing at once would put it in the image.
                 let proxy = self.proxy.clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_millis(250));
                     let _ = proxy.send_event(UserEvent::CaptureNow);
                 });
             }
-            UserEvent::Menu(id) if id == self.quit => event_loop.exit(),
-            UserEvent::Menu(id) if id == self.settings_item => platform::open_settings(),
+            UserEvent::Menu(MenuAction::Quit) => event_loop.exit(),
+            UserEvent::Menu(MenuAction::Settings) => platform::open_settings(),
             UserEvent::UploadProgress(p) => {
                 self.set_tray(TrayState::Progress(p));
                 if let Some((popup, window)) = &mut self.popup
@@ -960,16 +922,18 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::TextRead(result) => self.text_read(result, event_loop),
             UserEvent::SettingsChanged => self.reload_settings(),
             UserEvent::ShareClosed => self.share = None,
-            UserEvent::Menu(id) if id == self.why => {
+            UserEvent::Menu(MenuAction::Why) => {
                 if let Some(note) = &self.shortcut_note {
                     platform::show_info(note);
                 }
             }
-            UserEvent::Tray(TrayIconEvent::Click {
-                button: tray_icon::MouseButton::Left,
-                button_state: tray_icon::MouseButtonState::Up,
-                ..
-            }) if self.settings.tray_click == TrayClick::Capture => self.open_capture(event_loop),
+            UserEvent::TrayClicked if self.settings.tray_click == TrayClick::Capture => {
+                self.open_capture(event_loop);
+            }
+            UserEvent::TrayMissing if !self.told_tray_missing => {
+                self.told_tray_missing = true;
+                platform::show_info(&tray::no_tray_note(&self.labels));
+            }
             _ => {}
         }
     }

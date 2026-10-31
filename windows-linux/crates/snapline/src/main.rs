@@ -10,6 +10,8 @@ mod actions;
 mod app;
 mod capture;
 mod icon;
+#[cfg(target_os = "linux")]
+mod linux_tray;
 mod platform;
 mod popup_window;
 mod recognize;
@@ -17,6 +19,7 @@ mod secrets;
 mod settings;
 mod share;
 mod shortcuts;
+mod tray;
 mod upload_job;
 mod upload_settings;
 mod window;
