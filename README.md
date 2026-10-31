@@ -2,30 +2,38 @@
 
 ![Snapline: capture, mark up, hide what matters](Assets/banner.png)
 
-A native Apple Silicon screenshot tool for the macOS menu bar, modelled on Lightshot. Select an area, draw on it, then copy, save, print, edit, email, upload (S3 or Google Drive) or search for similar images. Sensitive data is hidden automatically on every capture.
+A screenshot tool for the macOS menu bar and the Windows tray, modelled on Lightshot. Select an area, draw on it,
+then copy, save, print, edit, share, upload (S3 or Google Drive) or search for similar images. Sensitive data is
+hidden automatically on every capture.
 
-- Swift 6.4, AppKit, ScreenCaptureKit, Vision. No third-party dependencies.
-- Copy the text out of any screenshot, read on your Mac.
-- arm64 only, macOS 15 or newer.
+- **macOS:** Swift 6.4, AppKit, ScreenCaptureKit, Vision, no third-party dependencies. Apple Silicon, macOS 15 or newer.
+- **Windows:** Rust, with Windows' own text recognition and face detection. Windows 10 (1809) or 11, x64.
+  [Install it](#windows-preview).
+- **Linux:** next, from the same Rust code ([plan](docs/windows-linux.md)).
+- Copy the text out of any screenshot, read on your computer.
 - Written from scratch: Snapline shares no code or artwork with Lightshot.
 
 ## Privacy
 
 Snapline is private by design. It has no servers, no accounts of its own, no analytics and no tracking.
 
-- **Everything runs on your Mac.** Capturing, drawing, auto-hide and Copy Text use Apple's built-in frameworks
-  (ScreenCaptureKit, Vision) on this device. No screenshot and no recognised text is sent to Snapline or to any third
-  party to be read, analysed or stored.
-- **An image leaves your Mac only when you ask it to:**
+- **Everything runs on your computer.** Capturing, drawing, auto-hide and Copy Text use the system's own frameworks
+  on this device: ScreenCaptureKit and Vision on macOS, Windows OCR and face detection on Windows. No screenshot and
+  no recognised text is sent to Snapline or to any third party to be read, analysed or stored.
+- **An image leaves your computer only when you ask it to:**
   - **Upload** sends it to the destination you set up: your own S3 bucket or your own Google Drive.
   - **Search** uploads it there first, then opens Google Lens or TinEye in your browser with that link.
-  - **Email** hands the file to your mail app.
-- **Secrets stay in the macOS Keychain**: bucket keys and the Google sign-in token. Google sign-in runs in your browser;
-  Snapline only receives the result on a local address (127.0.0.1).
+  - **Email** (macOS) hands the file to your mail app; **Share** (Windows) hands it to the app you pick.
+- **Secrets stay in the system's keystore** (the macOS Keychain or Windows Credential Manager): bucket keys and the
+  Google sign-in token. Google sign-in runs in your browser; Snapline only receives the result on a local address
+  (127.0.0.1).
 
-You can check this in the code: all network calls are in `macOS/Sources/Snapline/Uploaders.swift` and `GoogleAuth.swift`.
+You can check this in the code: all network calls are in `macOS/Sources/Snapline/Uploaders.swift` and
+`GoogleAuth.swift` on macOS, and in `windows-linux/crates/snapline-upload/` on Windows.
 
-## Build and run
+## macOS
+
+### Build and run
 
 The macOS app is the Swift package in `macOS/`. Run these from there:
 
@@ -42,7 +50,7 @@ System Audio Recording). If the build is signed ad hoc (no certificate, the defa
 new app**: it asks again, and Keychain may ask once to let Snapline read its saved keys ("Always Allow"). To avoid that,
 see below.
 
-### Keep permissions across rebuilds
+#### Keep permissions across rebuilds
 
 `macOS/scripts/make-app.sh` signs with a stable certificate when it finds one, in this order: the `SNAPLINE_SIGN_IDENTITY`
 environment variable, an **Apple Development** certificate, a **Snapline Local Signing** certificate, otherwise ad hoc.
@@ -69,40 +77,7 @@ It prints which one it used. Create one of these once:
 After switching, macOS asks for Screen Recording **one last time** (the signature changed). Remove old "Snapline"
 entries from the list with **−**, allow the new one, and from then on rebuilds keep the permission.
 
-## Windows (preview)
-
-The Windows version is in progress (see [docs/windows-linux.md](docs/windows-linux.md)). It can capture, select,
-draw, copy, save, upload, share, print, edit, hide sensitive data and copy text. An installer and code signing come
-next; keyboard-symbol repair in Copy Text comes later.
-
-To install it: download **Snapline-Setup** from the [latest release](https://github.com/barayuda/Snapline/releases/latest)
-and run it (no admin rights needed), or use the portable zip. It is not signed yet, so Windows SmartScreen asks first
-(More info → Run anyway). Preview builds of every push are under Actions: the latest successful **windows-linux**
-run has **snapline-windows** (the exe) and **snapline-windows-dist** (installer, zip and checksums). How releases
-are made: [docs/releasing-windows.md](docs/releasing-windows.md).
-
-- Take a screenshot: PrtScn or Ctrl+Shift+1, or the tray icon's menu. Change the shortcut in the tray menu →
-  **Settings…** → General. If PrtScn opens the Snipping Tool instead, turn off Settings → Accessibility → Keyboard →
-  "Use the Print screen key to open screen capture" and restart Snapline.
-- In the capture: the same keys as on macOS with Ctrl for ⌘. Ctrl+Shift+S is Save As.
-- Edit: Ctrl+E or the sliders button opens the capture in Paint, or in the app chosen under Settings → General.
-- Share: the share button opens the Windows Share window (Outlook, Mail, Teams and others). It replaces Email.
-- Print: Ctrl+P or the printer button.
-- Upload: Ctrl+D or the Upload button. Set the bucket or Google Drive in the tray menu → **Settings…** → Upload (the same
-  fields as on macOS; keys are kept in Windows Credential Manager). The link is copied when the upload finishes.
-- Search similar images: the magnifier button, then Google Lens or TinEye.
-- Auto-hide: every capture is read on your PC, and card numbers, keys, passwords, phone numbers, emails and faces
-  get black boxes before you copy, save or upload. Click a box to show it again; the eye button turns auto-hide off
-  for this capture. Choose what to hide in the tray menu → **Settings…** → Auto-hide.
-- Copy Text: Ctrl+Shift+C or the text button. Needs a Windows language with text recognition (Settings → Time &
-  language → Language & region).
-- Settings: the tray menu → **Settings…** has General (shortcut, tray click, save folder, editor, saving at 100 % size,
-  launch at sign-in), Upload and Auto-hide tabs. Changes apply at once. They are stored in
-  `%APPDATA%\Snapline\settings.toml`.
-
-To build it: `cd windows-linux && cargo run -p snapline` (it also runs on macOS, for trying the overlay).
-
-## Use
+### Use
 
 | Action | How |
 |---|---|
@@ -125,7 +100,7 @@ To build it: `cd windows-linux && cargo run -p snapline` (it also runs on macOS,
 
 Confirmations such as "Screenshot saved" or "Text copied" appear briefly in a small popover under the menu bar icon. Preferences opens in the same popover (menu → Preferences…, or ⌘,). It stays open while you switch to a browser to copy keys; close it with ✕, Esc or a click on the menu bar icon, or drag it away from the menu bar to keep it as a floating window.
 
-### Auto-hide sensitive data
+#### Auto-hide sensitive data
 
 When the screen freezes, Snapline reads it with Apple's on-device text recognition and covers matches with solid black boxes. Nothing is sent anywhere.
 
@@ -148,9 +123,47 @@ the screen (from `macOS/`, after `swift build`):
 .build/debug/Snapline --text some-image.png
 ```
 
+## Windows (preview)
+
+The Windows version is in progress (see [docs/windows-linux.md](docs/windows-linux.md)). It can capture, select,
+draw, copy, save, upload, share, print, edit, hide sensitive data and copy text. Keyboard-symbol repair in Copy Text
+comes later.
+
+To install it: download **Snapline-Setup** from the [latest release](https://github.com/barayuda/Snapline/releases/latest)
+and run it (no admin rights needed), or use the portable zip. It is not signed yet, so Windows SmartScreen asks first
+(More info → Run anyway). Preview builds of every push are under Actions: the latest successful **windows-linux**
+run has **snapline-windows** (the exe) and **snapline-windows-dist** (installer, zip and checksums). How releases
+are made: [docs/releasing-windows.md](docs/releasing-windows.md).
+
+- Take a screenshot: PrtScn or Ctrl+Shift+1, or the tray icon's menu. Change the shortcut in the tray menu →
+  **Settings…** → General. If PrtScn opens the Snipping Tool instead, turn off Settings → Accessibility → Keyboard →
+  "Use the Print screen key to open screen capture" and restart Snapline.
+- In the capture: the same keys as on macOS with Ctrl for ⌘. Ctrl+Shift+S is Save As.
+- Edit: Ctrl+E or the sliders button opens the capture in Paint, or in the app chosen under Settings → General.
+- Share: the share button opens the Windows Share window (Outlook, Mail, Teams and others). It replaces Email.
+- Print: Ctrl+P or the printer button.
+- Upload: Ctrl+D or the Upload button. Set the bucket or Google Drive in the tray menu → **Settings…** → Upload (the same
+  fields as on macOS; keys are kept in Windows Credential Manager). The link is copied when the upload finishes.
+- Networks with a proxy: uploads use the proxy set in Settings → Network & internet → Proxy → "Use a proxy server"
+  (or `HTTPS_PROXY`), and trust the certificates Windows trusts. Automatic proxy setup (a setup script or "Automatically
+  detect settings") and proxies that ask for a sign-in are not supported yet.
+- Search similar images: the magnifier button, then Google Lens or TinEye.
+- Auto-hide: every capture is read on your PC, and card numbers, keys, passwords, phone numbers, emails and faces
+  get black boxes before you copy, save or upload. Click a box to show it again; the eye button turns auto-hide off
+  for this capture. Choose what to hide in the tray menu → **Settings…** → Auto-hide.
+- Copy Text: Ctrl+Shift+C or the text button. Needs a Windows language with text recognition (Settings → Time &
+  language → Language & region).
+- Settings: the tray menu → **Settings…** has General (shortcut, tray click, save folder, editor, saving at 100 % size,
+  launch at sign-in), Upload and Auto-hide tabs. Changes apply at once. They are stored in
+  `%APPDATA%\Snapline\settings.toml`.
+
+To build it: `cd windows-linux && cargo run -p snapline` (it also runs on macOS, for trying the overlay).
+
 ## Upload setup
 
 Pick the target in Preferences → Upload. Anything uploaded is public to whoever has the link. Do not upload guest or customer data.
+
+On Windows the same fields are in the tray menu → **Settings…** → Upload, and keys are kept in Windows Credential Manager.
 
 ### S3-compatible bucket (AWS S3, Cloudflare R2, MinIO)
 
@@ -209,7 +222,7 @@ windows-linux/                the Windows and Linux app (Rust workspace, in prog
 fixtures/                     test cases shared by the Swift and Rust tests
 docs/                         design notes and plans
 scripts/brand/                icon and banner generator, brand fonts (OFL)
-Assets/                       AppIcon.icon (layered app icon), icon-1024.png, banner.png (generated)
+Assets/                       AppIcon.icon (layered app icon), icon-1024.png, banner.png (generated; also site/assets/og.png)
 site/                         website: home, privacy policy, terms (static, deployed by Netlify)
 ```
 
