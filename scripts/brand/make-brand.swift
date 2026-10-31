@@ -280,7 +280,7 @@ func drawBanner(_ c: CGContext, w: CGFloat, h: CGFloat) {
                  color: rgb(0xD8CCFF, 0.92), at: CGPoint(x: textX + 6, y: h / 2 - 110))
 
     // Small clinical label, bottom right.
-    let label = "macOS  ·  WINDOWS  ·  ON-DEVICE PRIVACY"
+    let label = "macOS  ·  WINDOWS  ·  LINUX  ·  ON-DEVICE PRIVACY"
     let labelFont = CTFontCreateWithName("GeistMono-Regular" as CFString, 24, nil)
     let lw = CTLineGetTypographicBounds(CTLineCreateWithAttributedString(NSAttributedString(string: label, attributes: [.font: labelFont, .kern: 3])), nil, nil, nil)
     _ = drawText(c, label, font: "GeistMono-Regular", size: 24, color: rgb(0xFFFFFF, 0.42),

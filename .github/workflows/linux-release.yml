@@ -1,0 +1,110 @@
+name: linux-release
+
+# A `linux-v<version>` tag builds Snapline for Linux and creates a DRAFT release; Barayuda checks it and publishes it.
+on:
+  push:
+    tags: ["linux-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  packages:
+    strategy:
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: windows-linux
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - name: Install Linux build packages
+        run: sudo apt-get update && grep -v '^$' linux/apt-packages.txt | xargs sudo apt-get install -y --no-install-recommends
+      - id: version
+        name: Check the tag against the crate version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          crate=$(cargo pkgid -p snapline | sed 's/.*[#@]//')
+          [ "${TAG#linux-v}" = "$crate" ] || { echo "Tag says ${TAG#linux-v} but snapline's Cargo.toml says $crate"; exit 1; }
+          grep -q "<release version=\"$crate\"" linux/dev.barayuda.Snapline.metainfo.xml || { echo "Add a <release> for $crate to the metainfo"; exit 1; }
+          echo "version=$crate" >>"$GITHUB_OUTPUT"
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo install cargo-deb --version 3.8.0 --locked
+      - run: cargo build --release -p snapline
+      - run: linux/package.sh ${{ steps.version.outputs.version }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-packages-${{ runner.arch }}
+          path: windows-linux/target/dist/*
+          if-no-files-found: error
+
+  flatpak:
+    needs: packages
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v7
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6.8
+        with:
+          bundle: Snapline-${{ needs.packages.outputs.version }}-${{ matrix.arch }}.flatpak
+          manifest-path: windows-linux/linux/dev.barayuda.Snapline.yml
+          arch: ${{ matrix.arch }}
+          upload-artifact: false
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-flatpak-${{ matrix.arch }}
+          path: Snapline-*.flatpak
+          if-no-files-found: error
+
+  release:
+    needs: [packages, flatpak]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: linux-*
+          path: dist
+          merge-multiple: true
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.packages.outputs.version }}
+        run: |
+          cd dist
+          rm -f SHA256SUMS-linux-*.txt
+          sha256sum -- *.deb *.AppImage *.flatpak >SHA256SUMS.txt
+          {
+            echo "Snapline for Linux needs an **X11 session** for now (Wayland is next)."
+            echo
+            echo "- **Ubuntu, Debian, Mint:** \`sudo apt install ./snapline_${VERSION}_amd64.deb\` (or \`arm64\`)."
+            echo "- **Other distributions:** the AppImage: make it executable and run it."
+            echo "- **Flatpak:** \`flatpak install --user Snapline-${VERSION}-x86_64.flatpak\` (the Flathub remote must be set up for the runtime)."
+            echo
+            echo "GNOME shows tray icons only with the \"AppIndicator and KStatusNotifierItem Support\" extension."
+            echo
+            echo "SHA-256:"
+            echo
+            echo '```'
+            cat SHA256SUMS.txt
+            echo '```'
+          } >../notes.md
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "Snapline for Linux $VERSION" --notes-file ../notes.md ./*

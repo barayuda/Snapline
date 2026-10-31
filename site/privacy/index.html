@@ -40,18 +40,18 @@
       <p class="updated">Last updated 31 October 2026</p>
 
       <div class="summary">
-        <p>Snapline is a screenshot app that runs on your Mac or Windows PC. It has no servers, no accounts of its own, no analytics and no tracking. Your screenshots are read only on your computer. An image leaves your computer only when you choose to upload, search, email or share it, and then it goes only to the place you chose.</p>
+        <p>Snapline is a screenshot app that runs on your Mac, Windows PC or Linux computer. It has no servers, no accounts of its own, no analytics and no tracking. Your screenshots are read only on your computer. An image leaves your computer only when you choose to upload, search, email or share it, and then it goes only to the place you chose.</p>
       </div>
 
-      <p>This policy covers the Snapline apps for macOS and Windows, and this website. Snapline is made by Barayuda (“we”, “us”).</p>
+      <p>This policy covers the Snapline apps for macOS, Windows and Linux, and this website. Snapline is made by Barayuda (“we”, “us”).</p>
 
       <h2>What Snapline does on your computer</h2>
       <ul>
-        <li>Capturing the screen, drawing, auto-hide of sensitive data and Copy Text all run on your computer. On a Mac they use Apple's built-in frameworks (ScreenCaptureKit and Vision). On Windows they use Windows' built-in text recognition (Windows.Media.Ocr) and face detection.</li>
+        <li>Capturing the screen, drawing, auto-hide of sensitive data and Copy Text all run on your computer. On a Mac they use Apple's built-in frameworks (ScreenCaptureKit and Vision). On Windows they use Windows' built-in text recognition (Windows.Media.Ocr) and face detection. On Linux they use Tesseract, which is part of Snapline; Linux has no face detection yet.</li>
         <li>No screenshot and no recognised text is sent to us or to anyone else to be read, analysed or stored.</li>
         <li>Snapline does not collect usage data, crash reports or any other telemetry.</li>
-        <li>Your settings are stored on your computer: on a Mac in Snapline's preferences, on Windows in <code>%APPDATA%\Snapline\settings.toml</code>. Secrets (bucket keys and your Google sign-in) are stored in the macOS Keychain or in Windows Credential Manager.</li>
-        <li>On Windows, Edit, Share and Print write a temporary copy of the screenshot to <code>%TEMP%\Snapline</code>, so the app you open it in can read it. Snapline does not delete these copies; Windows Storage Sense or Disk Cleanup can, or you can delete the folder yourself.</li>
+        <li>Your settings are stored on your computer: on a Mac in Snapline's preferences, on Windows in <code>%APPDATA%\Snapline\settings.toml</code>, on Linux in <code>~/.config/Snapline/settings.toml</code>. Secrets (bucket keys and your Google sign-in) are stored in the macOS Keychain, in Windows Credential Manager, or on Linux in the desktop keyring (GNOME Keyring or KWallet).</li>
+        <li>On Windows, Edit, Share and Print write a temporary copy of the screenshot to <code>%TEMP%\Snapline</code>, so the app you open it in can read it. Snapline does not delete these copies; Windows Storage Sense or Disk Cleanup can, or you can delete the folder yourself. On Linux, Edit, Share and Print write the copy to <code>~/.cache/Snapline/temp</code>.</li>
       </ul>
 
       <h2>When an image leaves your computer</h2>
@@ -60,7 +60,7 @@
         <li><strong>Upload</strong> sends the image to the destination you set up: your own S3-compatible bucket, or your own Google Drive. Anyone with the link can view it.</li>
         <li><strong>Search similar images</strong> uploads the image there first, then opens Google Lens or TinEye in your browser with that link. Those services handle the image under their own privacy policies.</li>
         <li><strong>Email</strong> (Mac) hands the file to your mail app. Nothing is sent until you send the email.</li>
-        <li><strong>Share</strong> (Windows) hands the file to the app you pick in the Windows Share window, such as Outlook or Teams. That app handles it under its own terms and privacy policy, and nothing is sent until you send it there.</li>
+        <li><strong>Share</strong> (Windows) hands the file to the app you pick in the Windows Share window, such as Outlook or Teams. That app handles it under its own terms and privacy policy, and nothing is sent until you send it there. <strong>Share</strong> (Linux) opens a new email with the file attached in your mail app; nothing is sent until you send it.</li>
       </ul>
       <p>We never receive these images. The services you upload to (for example Google, Amazon Web Services or Cloudflare) handle them under their own terms and privacy policies.</p>
 

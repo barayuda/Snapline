@@ -2,14 +2,15 @@
 
 ![Snapline: capture, mark up, hide what matters](Assets/banner.png)
 
-A screenshot tool for the macOS menu bar and the Windows tray, modelled on Lightshot. Select an area, draw on it,
+A screenshot tool for the macOS menu bar, the Windows tray and Linux panels, modelled on Lightshot. Select an area, draw on it,
 then copy, save, print, edit, share, upload (S3 or Google Drive) or search for similar images. Sensitive data is
 hidden automatically on every capture.
 
 - **macOS:** Swift 6.4, AppKit, ScreenCaptureKit, Vision, no third-party dependencies. Apple Silicon, macOS 15 or newer.
 - **Windows:** Rust, with Windows' own text recognition and face detection. Windows 10 (1809) or 11, x64.
   [Install it](#windows-preview).
-- **Linux:** next, from the same Rust code ([plan](docs/windows-linux.md)).
+- **Linux:** preview for X11 desktops (.deb, AppImage, Flatpak), from the same Rust code; Wayland is next.
+  [Install it](#linux-preview).
 - Copy the text out of any screenshot, read on your computer.
 - Written from scratch: Snapline shares no code or artwork with Lightshot.
 
@@ -18,18 +19,21 @@ hidden automatically on every capture.
 Snapline is private by design. It has no servers, no accounts of its own, no analytics and no tracking.
 
 - **Everything runs on your computer.** Capturing, drawing, auto-hide and Copy Text use the system's own frameworks
-  on this device: ScreenCaptureKit and Vision on macOS, Windows OCR and face detection on Windows. No screenshot and
+  on this device: ScreenCaptureKit and Vision on macOS, Windows OCR and face detection on Windows, Tesseract (built
+  into Snapline) on Linux. No screenshot and
   no recognised text is sent to Snapline or to any third party to be read, analysed or stored.
 - **An image leaves your computer only when you ask it to:**
   - **Upload** sends it to the destination you set up: your own S3 bucket or your own Google Drive.
   - **Search** uploads it there first, then opens Google Lens or TinEye in your browser with that link.
-  - **Email** (macOS) hands the file to your mail app; **Share** (Windows) hands it to the app you pick.
-- **Secrets stay in the system's keystore** (the macOS Keychain or Windows Credential Manager): bucket keys and the
+  - **Email** (macOS) and **Share** (Linux) hand the file to your mail app; **Share** (Windows) hands it to the app
+    you pick.
+- **Secrets stay in the system's keystore** (the macOS Keychain, Windows Credential Manager, or the desktop keyring
+  on Linux): bucket keys and the
   Google sign-in token. Google sign-in runs in your browser; Snapline only receives the result on a local address
   (127.0.0.1).
 
 You can check this in the code: all network calls are in `macOS/Sources/Snapline/Uploaders.swift` and
-`GoogleAuth.swift` on macOS, and in `windows-linux/crates/snapline-upload/` on Windows.
+`GoogleAuth.swift` on macOS, and in `windows-linux/crates/snapline-upload/` on Windows and Linux.
 
 ## macOS
 
@@ -159,11 +163,43 @@ are made: [docs/releasing-windows.md](docs/releasing-windows.md).
 
 To build it: `cd windows-linux && cargo run -p snapline` (it also runs on macOS, for trying the overlay).
 
+## Linux (preview)
+
+The Linux version runs on **X11 desktops** (Xfce, KDE Plasma on X11, Cinnamon, MATE, GNOME on Xorg). On Wayland it
+says so and stops; Wayland support (screenshot and shortcut portals) is the next step. It does what the Windows version
+does, with these differences:
+
+- No face detection yet, so faces are not hidden; text is.
+- Share opens a new email with the screenshot attached (`xdg-email`), as Email does on macOS.
+- Print opens the screenshot in your image viewer; press Ctrl+P there.
+- The tray icon needs a panel that shows tray icons. On GNOME, install the "AppIndicator and KStatusNotifierItem
+  Support" extension; without a tray, the shortcuts still work and `snapline --settings` opens the settings.
+- Bucket keys and the Google sign-in go to the desktop keyring (GNOME Keyring or KWallet).
+- Proxies come from `HTTPS_PROXY` (and `HTTP_PROXY`, `NO_PROXY`); certificates are the system's.
+- Settings are stored in `~/.config/Snapline/settings.toml`; Edit, Share and Print write their copy to
+  `~/.cache/Snapline/temp`.
+
+To install it, download from the [releases](https://github.com/barayuda/Snapline/releases) (tags `linux-v…`):
+
+- **Ubuntu, Debian, Mint:** `sudo apt install ./snapline_<version>_amd64.deb` (or `arm64`).
+- **Other distributions:** the AppImage: make it executable and run it (glibc 2.39 or newer).
+- **Flatpak:** `flatpak install --user Snapline-<version>-x86_64.flatpak` (the Flathub remote must be set up for the
+  runtime).
+
+Preview builds of every push are under Actions: the latest successful **windows-linux** run has **snapline-linux-X64**
+and **snapline-linux-ARM64** (.deb and AppImage) and the Flatpak bundles. How releases are made:
+[docs/releasing-linux.md](docs/releasing-linux.md).
+
+To build it: install the packages in `windows-linux/linux/apt-packages.txt` (Ubuntu 24.04), then
+`cd windows-linux && cargo run -p snapline`. On a Mac, `windows-linux/linux/dev-vm.sh setup` makes an OrbStack Ubuntu
+machine to build and test in.
+
 ## Upload setup
 
 Pick the target in Preferences → Upload. Anything uploaded is public to whoever has the link. Do not upload guest or customer data.
 
-On Windows the same fields are in the tray menu → **Settings…** → Upload, and keys are kept in Windows Credential Manager.
+On Windows and Linux the same fields are in the tray menu → **Settings…** → Upload, and keys are kept in Windows
+Credential Manager or the Linux desktop keyring.
 
 ### S3-compatible bucket (AWS S3, Cloudflare R2, MinIO)
 
@@ -214,11 +250,12 @@ macOS/                        the macOS app (Swift package)
                               uploaders, Google sign-in, auto-hide scan, Preferences
   Tests/SnaplineCoreTests/
   scripts/make-app.sh         bundle + sign
-windows-linux/                the Windows and Linux app (Rust workspace, in progress)
+windows-linux/                the Windows and Linux app (Rust workspace)
   crates/snapline-core/       the Rust twin of SnaplineCore
   crates/snapline-overlay/    the capture overlay without windows: selection, drawing, toolbars (tiny-skia)
   crates/snapline-upload/     uploads without UI or storage: S3, Google Drive, Google sign-in
-  crates/snapline/            the Windows app: tray, shortcuts, capture, overlay windows, copy, save, uploads
+  crates/snapline/            the Windows and Linux app: tray, shortcuts, capture, overlay windows, copy, save, uploads
+  linux/                      Linux packaging (.deb, AppImage, Flatpak), build packages, the OrbStack dev machine
 fixtures/                     test cases shared by the Swift and Rust tests
 docs/                         design notes and plans
 scripts/brand/                icon and banner generator, brand fonts (OFL)

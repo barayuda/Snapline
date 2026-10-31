@@ -1,6 +1,6 @@
 # Snapline for Windows and Linux: design
 
-Status: draft, 28 October 2026. Branch `feat/windows-linux-rust`.
+Status: draft, 28 October 2026. Branch `feat/windows-linux-rust`. Linux X11 preview: Phase 6a, 1 November 2026.
 
 ## Goal
 
@@ -30,6 +30,15 @@ app, and Preferences. The macOS app stays in Swift and keeps working as it does 
 | Code signing | Wired into the release workflow, switched on when an Azure Artifact Signing account exists; unsigned until then | Signing costs money and identity checks; releases need not wait for it. Barayuda, 31 Oct 2026 |
 | Where builds go | GitHub Releases: a `windows-v<version>` tag builds a draft that Barayuda publishes | One public download page; nothing is published by CI alone. Barayuda, 31 Oct 2026 |
 | Phase 5c | Proxy from Windows' manual setting and `HTTPS_PROXY`, certificates from the Windows store (no PAC/WPAD); banner says macOS and Windows; README for both; the recorder, Print/Edit/Share, tray and scan, and release minors | Fix what would hurt the first release. Barayuda, 31 Oct 2026 |
+| Linux scope | 6a: X11 only; on Wayland Snapline says it needs an X11 session. 6b: Wayland through portals | XWayland sees only X11 apps, so captures there would be black. Barayuda, 1 Nov 2026 |
+| Text recognition on Linux | Tesseract 5, linked into Snapline (`tesseract-rs` with the system library); no face detection yet | No separate program to install; the build downloads nothing. Barayuda, 1 Nov 2026 |
+| Linux packages | .deb, AppImage and Flatpak, x86_64 and aarch64, from a `linux-v<version>` tag | Covers Debian/Ubuntu, any distro, and sandboxed installs. Barayuda, 1 Nov 2026 |
+| Linux testing | An OrbStack Ubuntu 24.04 VM on the Mac (`windows-linux/linux/dev-vm.sh`); CI on GitHub's Ubuntu runners is the gate | Barayuda, 1 Nov 2026 |
+| Tray on Linux | `ksni` (StatusNotifierItem over D-Bus), not `tray-icon` | No GTK, and left clicks are reported. Phase 6a plan |
+| Message boxes on Linux | An egui window (`snapline --message`) | rfd's Linux message box needs zenity, which the Flatpak sandbox lacks. Phase 6a plan |
+| Share and Print on Linux | Share opens an email with the screenshot attached (`xdg-email`); Print opens the image viewer | Linux has no share sheet and no print dialog without GTK. Phase 6a plan |
+| Linux overlay and popups | The overlay is a fullscreen window per monitor; popups are override-redirect | Fullscreen gets the keyboard from the window manager; override-redirect keeps popups out of the taskbar on every window manager. Phase 6a |
+| App ID | `dev.barayuda.Snapline` | Matches the macOS bundle ID. Phase 6a plan |
 
 ## Repo layout
 
@@ -40,7 +49,8 @@ windows-linux/             Cargo workspace
   crates/snapline-overlay/ the overlay without windows: selection, drawing, text, toolbars, popup, rendering (tiny-skia)
   crates/snapline-upload/  uploads without UI or storage: S3, Google Drive, Google sign-in (tested on every OS)
   crates/snapline/         the app (from Phase 2): tray, hotkey, capture, overlay windows, actions
-    src/platform.rs        Windows-only calls for now; splits into platform/windows and platform/linux when they grow
+    src/platform/          system calls: Windows in mod.rs, Linux in linux.rs
+  linux/                   Linux packaging (.deb, AppImage, Flatpak), build packages, the OrbStack dev machine
 fixtures/                  test cases shared by both apps (JSON)
 Assets/, scripts/brand/    brand art and generator, shared
 site/                      website
@@ -53,17 +63,17 @@ site/                      website
 | ScreenCaptureKit | `xcap` (Windows.Graphics.Capture / DXGI); per-monitor DPI aware | X11: `xcap`. Wayland: screenshot portal (`ashpd`) |
 | Overlay (AppKit window per screen) | `winit` borderless topmost window per monitor showing the frozen capture through `softbuffer` | same; Wayland cannot place windows, so one fullscreen window per output |
 | Drawing (Core Graphics) | `tiny-skia` for both the screen and the saved image (one renderer) | same |
-| Vision text recognition | Windows.Media.Ocr (`windows` crate), built into Windows 10/11 | Tesseract (bundled language data) |
-| Vision face detection | Windows.Media.FaceAnalysis.FaceDetector | to be decided in Phase 6 |
+| Vision text recognition | Windows.Media.Ocr (`windows` crate), built into Windows 10/11 | Tesseract 5, linked (`tesseract-rs`); English data from the package |
+| Vision face detection | Windows.Media.FaceAnalysis.FaceDetector | none in Phase 6a; text only |
 | Carbon hotkey | `global-hotkey` (RegisterHotKey); PrtScn and Ctrl+Shift+1 by default | X11: `global-hotkey`. Wayland: global shortcuts portal |
-| Menu bar item and popovers | `tray-icon`; a borderless popup next to the tray, drawn with tiny-skia | same; GNOME needs the AppIndicator extension |
-| Keychain | Credential Manager via `keyring-core` + `windows-native-keyring-store` | Secret Service via `keyring-core` |
+| Menu bar item and popovers | `tray-icon`; a borderless popup next to the tray, drawn with tiny-skia | `ksni` (StatusNotifierItem); GNOME needs the AppIndicator extension |
+| Keychain | Credential Manager via `keyring-core` + `windows-native-keyring-store` | Secret Service via `keyring-core` + `zbus-secret-service-keyring-store` |
 | URLSession | `ureq` (rustls with ring) on a worker thread | same |
 | Google sign-in on 127.0.0.1 | same flow, `std::net::TcpListener` | same |
 | Pasteboard | `arboard` | same |
 | Save panel | `rfd` | same |
 | Launch at login | `HKCU\...\Run` registry value | XDG autostart file |
-| Settings (UserDefaults) | TOML file in `%APPDATA%\Snapline\` (`serde`, `toml`) | `~/.config/snapline/` |
+| Settings (UserDefaults) | TOML file in `%APPDATA%\Snapline\` (`serde`, `toml`) | `~/.config/Snapline/settings.toml` |
 | Preferences (SwiftUI) | an `egui` window as a second process; its Upload tab arrives in Phase 3, Auto-hide in Phase 4 | same |
 
 Crate versions are not pinned here. Add each with `cargo add` so the latest stable release is used, and check for
@@ -94,7 +104,8 @@ Each phase ends with something that works on its own and has its own plan in `do
      [docs/releasing-windows.md](releasing-windows.md).
    - 5c: uploads through a proxy and the Windows certificate store, the minors users notice, safer release workflow,
      README and banner for both platforms. Plan: [docs/plans/2026-10-31-windows-polish.md](plans/2026-10-31-windows-polish.md).
-6. **Linux X11**, then **Linux Wayland** (portals, Flatpak).
+6. **Linux.** 6a: X11, with .deb, AppImage and Flatpak. Plan: [docs/plans/2026-11-01-linux-x11.md](plans/2026-11-01-linux-x11.md).
+   How to release: [docs/releasing-linux.md](releasing-linux.md). 6b: Wayland (screenshot and global shortcuts portals).
 
 ## Risks
 
@@ -105,6 +116,8 @@ Each phase ends with something that works on its own and has its own plan in `do
   `fancy-regex` for those rules only.
 - **OCR quality.** Windows OCR and Tesseract misread different characters than Vision. Auto-hide needs its own test
   images per engine, and on Linux it will miss more.
+  In the 6a check, Tesseract on a whole 1080p screen over a busy line-pattern wallpaper dropped an email line
+  that it read fine on the selection alone; reading at 2× found it but took about 7× as long.
 - **OCR languages.** Windows OCR has no Indonesian. Snapline falls back to English OCR, which reads Latin text and
   digits.
 - **Multiple monitors with different scaling.** Needs per-monitor DPI awareness from the first Windows build.
@@ -113,4 +126,7 @@ Each phase ends with something that works on its own and has its own plan in `do
 - **Networks that inspect TLS with their own root certificate.** ureq trusts the bundled web roots only, so uploads
   fail there. Add the Windows certificate store if users hit it.
 - **SmartScreen.** An unsigned installer shows a warning. Code signing is planned for Phase 5.
-- **Wayland.** Capture and hotkeys depend on portals that not every desktop has.
+- **Wayland.** Capture and hotkeys depend on portals that not every desktop has. 6a refuses Wayland sessions with a
+  message.
+- **Tray on GNOME.** GNOME shows no tray icons without an extension. Snapline says so once and keeps working from its
+  shortcuts.
