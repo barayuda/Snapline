@@ -1,4 +1,16 @@
-//! The few Windows calls Snapline makes directly. Other systems get harmless stand-ins until Phase 6.
+//! The few system calls Snapline makes directly: Windows here, Linux in `linux.rs` (re-exported below). macOS,
+//! where the app runs only for trying the overlay, gets harmless stand-ins.
+
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "linux")]
+pub use linux::session_problem;
+
+/// Why Snapline cannot run in this session; other systems always can.
+#[cfg(not(target_os = "linux"))]
+pub fn session_problem() -> Option<&'static str> {
+    None
+}
 
 /// False when another Snapline is already running.
 pub fn claim_single_instance() -> bool {

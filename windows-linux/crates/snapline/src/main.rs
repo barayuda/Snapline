@@ -1,4 +1,4 @@
-//! Snapline for Windows: a tray app that captures the screen, lets you mark it up, and copies or saves it.
+//! Snapline for Windows and Linux: a tray app that captures the screen, lets you mark it up, and copies or saves it.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // no console window in release builds
 #![allow(
     clippy::cast_possible_truncation,
@@ -27,8 +27,18 @@ mod worker;
 use winit::event_loop::{ControlFlow, EventLoop};
 
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--version") {
+        return println!("Snapline {}", env!("CARGO_PKG_VERSION"));
+    }
+    if let Some(problem) = platform::session_problem() {
+        return platform::show_error(problem);
+    }
     // `--upload-settings` is the Phase 3 name, kept for shortcuts made then.
-    if std::env::args().any(|a| a == "--settings" || a == "--upload-settings") {
+    if args
+        .iter()
+        .any(|a| a == "--settings" || a == "--upload-settings")
+    {
         return upload_settings::run_window();
     }
     if !platform::claim_single_instance() {
