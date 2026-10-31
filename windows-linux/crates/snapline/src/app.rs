@@ -14,6 +14,7 @@ use chrono::Local;
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use snapline_core::naming;
+use snapline_core::sensitive_text::SensitiveCategory;
 use snapline_overlay::input::{Key, Mods};
 use snapline_overlay::popup::{self, Popup, PopupButton, PopupState};
 use snapline_overlay::scan::{self, HideBox};
@@ -41,10 +42,11 @@ pub enum UserEvent {
     UploadProgress(f64),
     UploadFinished(Outcome),
     /// Auto-hide finished reading screen `screen` of capture `capture`: its boxes, or why it could not run.
+    /// With the boxes comes why a step is missing, when only text or only face detection worked.
     ScanDone {
         capture: u64,
         screen: usize,
-        result: Result<Vec<HideBox>, String>,
+        result: Result<(Vec<HideBox>, Option<String>), String>,
     },
     /// Copy Text finished: the text (maybe empty), or a sentence saying why it could not run.
     TextRead(Result<String, String>),
@@ -305,11 +307,11 @@ impl App {
             let (image, scale, categories) = (o.screen.clone(), o.ui_scale, categories.clone());
             let (proxy, capture) = (self.proxy.clone(), cap.id);
             std::thread::spawn(move || {
-                let faces =
-                    categories.contains(&snapline_core::sensitive_text::SensitiveCategory::Face);
+                let faces = categories.contains(&SensitiveCategory::Face);
+                let text = categories.iter().any(|c| *c != SensitiveCategory::Face);
                 let result = recognize::system()
-                    .recognize(&image, faces)
-                    .map(|found| scan::hide_boxes(&found, &categories, scale));
+                    .recognize(&image, text, faces)
+                    .map(|r| (scan::hide_boxes(&r.found, &categories, scale), r.problem));
                 let _ = proxy.send_event(UserEvent::ScanDone {
                     capture,
                     screen,
@@ -325,8 +327,8 @@ impl App {
         std::thread::spawn(move || {
             let (w, h) = (f64::from(image.width()), f64::from(image.height()));
             let result = recognize::system()
-                .recognize(&image, false)
-                .map(|found| scan::copy_text(&found, w, h));
+                .recognize(&image, true, false)
+                .map(|r| scan::copy_text(&r.found, w, h));
             let _ = proxy.send_event(UserEvent::TextRead(result));
         });
     }
@@ -783,11 +785,19 @@ impl ApplicationHandler<UserEvent> for App {
                 let Some(cap) = self.capture.as_mut().filter(|c| c.id == capture) else {
                     return; // that capture is closed
                 };
-                let result = result.map_err(|why| {
-                    eprintln!("Snapline: auto-hide could not run: {why}");
-                    recognize::UNAVAILABLE.to_owned()
-                });
+                let (result, problem) = match result {
+                    Ok((boxes, problem)) => (Ok(boxes), problem),
+                    Err(why) => (Err(recognize::UNAVAILABLE.to_owned()), Some(why)),
+                };
+                if let Some(why) = &problem {
+                    eprintln!("Snapline: auto-hide: {why}");
+                }
+                let partial = result.is_ok() && problem.is_some();
                 let effect = cap.session.scan_done(screen, result);
+                if partial {
+                    // Only text or only faces were checked: say so instead of "hiding N".
+                    cap.session.overlays[screen].scan_note = Some(recognize::INCOMPLETE.to_owned());
+                }
                 let focused = cap.session.focused;
                 self.apply(event_loop, focused, effect);
             }

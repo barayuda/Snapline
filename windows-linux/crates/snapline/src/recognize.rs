@@ -1,17 +1,65 @@
 //! Text recognition and face detection on this PC: Windows OCR on Windows; elsewhere not yet (Linux: Phase 6).
 
-use snapline_overlay::scan::Recognized;
+use snapline_overlay::Rect;
+use snapline_overlay::scan::{Line, Recognized};
 use snapline_overlay::tiny_skia::Pixmap;
 
 /// Shown in the size badge when auto-hide could not run.
 pub const UNAVAILABLE: &str = "auto-hide unavailable";
+/// Shown in the size badge when text or face detection worked but the other did not.
+pub const INCOMPLETE: &str = "auto-hide incomplete";
+
+/// What a read found, and why a step is missing when only some of the steps worked.
+pub struct Reading {
+    pub found: Recognized,
+    pub problem: Option<String>,
+}
 
 pub trait Recognizer {
-    /// Reads `image`; finds faces too when `faces` is true. The error is a sentence for the user.
+    /// Reads the text in `image` when `text` is true, and finds faces when `faces` is true.
     ///
     /// # Errors
-    /// When this PC cannot recognise text (no OCR language, or not Windows).
-    fn recognize(&self, image: &Pixmap, faces: bool) -> Result<Recognized, String>;
+    /// When every step asked for failed (no OCR language, not Windows); the error is a sentence for the user.
+    fn recognize(&self, image: &Pixmap, text: bool, faces: bool) -> Result<Reading, String>;
+}
+
+/// Puts the text and face steps together (`None`: not asked for). A step that failed leaves a `problem` and the
+/// other step's results stand, so a missing face detector never costs the text boxes. Fails only when every
+/// step asked for failed.
+///
+/// # Errors
+/// The first step's error, when no step worked.
+#[cfg_attr(
+    not(windows),
+    allow(
+        dead_code,
+        reason = "only the Windows recognizer reads two steps so far"
+    )
+)]
+pub fn merge(
+    text: Option<Result<Vec<Line>, String>>,
+    faces: Option<Result<Vec<Rect>, String>>,
+) -> Result<Reading, String> {
+    let asked = usize::from(text.is_some()) + usize::from(faces.is_some());
+    let mut found = Recognized::default();
+    let mut problems = Vec::new();
+    match text {
+        Some(Ok(lines)) => found.lines = lines,
+        Some(Err(e)) => problems.push(e),
+        None => {}
+    }
+    match faces {
+        Some(Ok(rects)) => found.faces = rects,
+        Some(Err(e)) => problems.push(e),
+        None => {}
+    }
+    if asked > 0 && problems.len() == asked {
+        return Err(problems.swap_remove(0));
+    }
+    Ok(Reading {
+        found,
+        problem: (!problems.is_empty()).then(|| problems.join(" ")),
+    })
 }
 
 #[cfg(not(windows))]
@@ -19,7 +67,7 @@ struct NotYet;
 
 #[cfg(not(windows))]
 impl Recognizer for NotYet {
-    fn recognize(&self, _image: &Pixmap, _faces: bool) -> Result<Recognized, String> {
+    fn recognize(&self, _image: &Pixmap, _text: bool, _faces: bool) -> Result<Reading, String> {
         Err("Text recognition is not available on this system yet.".into())
     }
 }
@@ -40,7 +88,43 @@ pub fn system() -> Box<dyn Recognizer> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use snapline_overlay::tiny_skia::Pixmap;
+    use snapline_overlay::Rect;
+    use snapline_overlay::scan::{Line, Word};
+
+    fn line(text: &str) -> Line {
+        Line {
+            words: vec![Word {
+                text: text.into(),
+                rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            }],
+        }
+    }
+
+    // Review finding: one failed step must not throw away what the other found.
+    #[test]
+    fn a_failed_step_keeps_the_other_steps_results() {
+        let face = Rect::new(1.0, 2.0, 3.0, 4.0);
+        let r = merge(Some(Ok(vec![line("4111")])), Some(Err("no faces".into()))).unwrap();
+        assert_eq!(r.found.lines, [line("4111")]);
+        assert_eq!(r.problem.as_deref(), Some("no faces"));
+        let r = merge(Some(Err("no OCR".into())), Some(Ok(vec![face]))).unwrap();
+        assert_eq!(r.found.faces, [face]);
+        assert_eq!(r.problem.as_deref(), Some("no OCR"));
+    }
+
+    #[test]
+    fn it_fails_only_when_every_step_asked_for_fails() {
+        assert_eq!(
+            merge(Some(Err("no OCR".into())), Some(Err("no faces".into()))).err(),
+            Some("no OCR".into())
+        );
+        assert_eq!(
+            merge(Some(Err("no OCR".into())), None).err(),
+            Some("no OCR".into())
+        );
+        let only_faces = merge(None, Some(Ok(vec![]))).unwrap();
+        assert!(only_faces.problem.is_none());
+    }
 
     #[cfg(not(windows))]
     #[test]
@@ -48,8 +132,9 @@ mod tests {
         let image = Pixmap::new(10, 10).unwrap();
         assert!(
             system()
-                .recognize(&image, true)
-                .unwrap_err()
+                .recognize(&image, true, true)
+                .err()
+                .unwrap()
                 .contains("not available")
         );
     }
@@ -70,8 +155,8 @@ mod tests {
             40.0,
             BLACK,
         );
-        match system().recognize(&image, false) {
-            Ok(found) => {
+        match system().recognize(&image, true, false) {
+            Ok(Reading { found, .. }) => {
                 let text: Vec<String> = found
                     .lines
                     .iter()

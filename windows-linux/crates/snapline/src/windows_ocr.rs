@@ -1,8 +1,8 @@
 //! Windows.Media.Ocr and Windows.Media.FaceAnalysis, run on the calling (worker) thread.
 
-use crate::recognize::Recognizer;
+use crate::recognize::{Reading, Recognizer, merge};
 use snapline_overlay::Rect;
-use snapline_overlay::scan::{Line, Recognized, Word, ocr_scale};
+use snapline_overlay::scan::{Line, Word, ocr_scale};
 use snapline_overlay::tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 use windows::Globalization::Language;
 use windows::Graphics::Imaging::{BitmapPixelFormat, SoftwareBitmap};
@@ -86,12 +86,39 @@ fn faces(bitmap: &SoftwareBitmap) -> windows::core::Result<Vec<Rect>> {
     Ok(found)
 }
 
+/// The words Windows OCR reads in `bitmap`.
+fn read_text(bitmap: &SoftwareBitmap) -> Result<Vec<Line>, String> {
+    let engine = engine()?;
+    let result = engine
+        .RecognizeAsync(bitmap)
+        .and_then(|op| op.join())
+        .map_err(|e| failed(&e))?;
+    let mut lines = Vec::new();
+    for line in result.Lines().map_err(|e| failed(&e))? {
+        let mut words = Vec::new();
+        for word in line.Words().map_err(|e| failed(&e))? {
+            let r = word.BoundingRect().map_err(|e| failed(&e))?;
+            words.push(Word {
+                text: word.Text().map_err(|e| failed(&e))?.to_string_lossy(),
+                rect: Rect::new(
+                    f64::from(r.X),
+                    f64::from(r.Y),
+                    f64::from(r.Width),
+                    f64::from(r.Height),
+                ),
+            });
+        }
+        lines.push(Line { words });
+    }
+    Ok(lines)
+}
+
 impl Recognizer for WindowsOcr {
-    fn recognize(&self, image: &Pixmap, find_faces: bool) -> Result<Recognized, String> {
+    fn recognize(&self, image: &Pixmap, text: bool, find_faces: bool) -> Result<Reading, String> {
         // SAFETY: plain call on this thread; "already initialised" is fine, so the result is ignored.
         let _ = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
-        let engine = engine()?;
-        let max = OcrEngine::MaxImageDimension().map_err(|e| failed(&e))?;
+        // Without OCR (Windows N) the limit cannot be read; faces still work on a bitmap of this size.
+        let max = OcrEngine::MaxImageDimension().unwrap_or(4096);
         let factor = ocr_scale(image.width(), image.height(), max);
         let small;
         let source = if factor < 1.0 {
@@ -101,35 +128,14 @@ impl Recognizer for WindowsOcr {
             image
         };
         let bitmap = bitmap(source).map_err(|e| failed(&e))?;
-        let result = engine
-            .RecognizeAsync(&bitmap)
-            .and_then(|op| op.join())
-            .map_err(|e| failed(&e))?;
-        let mut found = Recognized::default();
-        for line in result.Lines().map_err(|e| failed(&e))? {
-            let mut words = Vec::new();
-            for word in line.Words().map_err(|e| failed(&e))? {
-                let r = word.BoundingRect().map_err(|e| failed(&e))?;
-                words.push(Word {
-                    text: word.Text().map_err(|e| failed(&e))?.to_string_lossy(),
-                    rect: Rect::new(
-                        f64::from(r.X),
-                        f64::from(r.Y),
-                        f64::from(r.Width),
-                        f64::from(r.Height),
-                    ),
-                });
-            }
-            found.lines.push(Line { words });
+        let lines = text.then(|| read_text(&bitmap));
+        let found_faces = find_faces
+            .then(|| faces(&bitmap).map_err(|e| format!("Face detection failed: {}", e.message())));
+        let mut reading = merge(lines, found_faces)?;
+        if factor < 1.0 {
+            reading.found = reading.found.scaled(1.0 / factor);
         }
-        if find_faces {
-            found.faces = faces(&bitmap).map_err(|e| failed(&e))?;
-        }
-        Ok(if factor < 1.0 {
-            found.scaled(1.0 / factor)
-        } else {
-            found
-        })
+        Ok(reading)
     }
 }
 
