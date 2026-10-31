@@ -40,6 +40,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends gnome-keyring
           xvfb-run -a dbus-run-session -- bash -c \
             'echo -n ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null && cargo test -p snapline -- --ignored'
+      - name: The Flatpak crate list matches Cargo.lock
+        if: runner.os == 'Linux'
+        run: |
+          pipx run --spec flatpak-cargo-generator==0.1.5 flatpak-cargo-generator Cargo.lock -o /tmp/cargo-sources.json
+          diff -q /tmp/cargo-sources.json linux/cargo-sources.json || { echo "Run: pipx run --spec flatpak-cargo-generator==0.1.5 flatpak-cargo-generator Cargo.lock -o linux/cargo-sources.json"; exit 1; }
       - name: Package (.deb, AppImage)
         if: runner.os == 'Linux'
         run: |
@@ -164,3 +169,29 @@ jobs:
           name: snapline-windows-dist
           path: windows-linux/target/dist/*
           if-no-files-found: error
+
+  flatpak:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v7
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6.8
+        with:
+          bundle: Snapline-${{ matrix.arch }}.flatpak
+          manifest-path: windows-linux/linux/dev.barayuda.Snapline.yml
+          arch: ${{ matrix.arch }}
+          cache-key: flatpak-builder-${{ matrix.arch }}-${{ hashFiles('windows-linux/Cargo.lock', 'windows-linux/linux/dev.barayuda.Snapline.yml') }}
+      - name: Snapline starts and finds its OCR data
+        run: |
+          flatpak-builder --run flatpak_app windows-linux/linux/dev.barayuda.Snapline.yml snapline --version | tee version.txt
+          grep -q 'English data in /app/share/tessdata' version.txt

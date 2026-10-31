@@ -1,0 +1,70 @@
+# Snapline for Linux as a Flatpak (X11 sessions; Wayland is Phase 6b).
+# Build: flatpak-builder --user --install-deps-from=flathub --force-clean build linux/dev.barayuda.Snapline.yml
+id: dev.barayuda.Snapline
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.llvm22 # libclang, for the PipeWire bindings xcap builds
+command: snapline
+finish-args:
+  - --share=ipc
+  - --socket=x11
+  - --share=network
+  - --device=dri
+  - --talk-name=org.kde.StatusNotifierWatcher # the tray icon
+  - --talk-name=org.freedesktop.secrets # bucket keys and the Google sign-in
+  - --talk-name=org.freedesktop.FileManager1 # Show in folder
+  - --filesystem=xdg-desktop # the default save folder
+  - --filesystem=xdg-pictures
+  - --filesystem=xdg-config/autostart:create # Launch at sign-in
+modules:
+  - name: leptonica
+    buildsystem: cmake-ninja
+    config-opts: [-DCMAKE_BUILD_TYPE=Release, -DBUILD_SHARED_LIBS=ON, -DSW_BUILD=OFF]
+    sources:
+      - type: archive
+        url: https://github.com/DanBloomberg/leptonica/releases/download/1.87.0/leptonica-1.87.0.tar.gz
+        sha256: c73363397f96eb1295602bf44d708a994ad42046c791bf03ea0505d829bdb6a7
+  - name: tesseract
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_SHARED_LIBS=ON
+      - -DBUILD_TRAINING_TOOLS=OFF
+      - -DDISABLE_CURL=ON
+      - -DDISABLE_ARCHIVE=ON
+      - -DGRAPHICS_DISABLED=ON
+      - -DENABLE_NATIVE=OFF
+    sources:
+      - type: archive
+        url: https://github.com/tesseract-ocr/tesseract/archive/refs/tags/5.5.2.tar.gz
+        sha256: 6235ea0dae45ea137f59c09320406f5888383741924d98855bd2ce0d16b54f21
+  - name: tessdata-eng
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 eng.traineddata /app/share/tessdata/eng.traineddata
+    sources:
+      - type: file
+        url: https://github.com/tesseract-ocr/tessdata_fast/raw/4.1.0/eng.traineddata
+        sha256: 7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2
+  - name: snapline
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm22/bin
+      env:
+        CARGO_HOME: /run/build/snapline/cargo
+        CARGO_NET_OFFLINE: 'true'
+        LIBCLANG_PATH: /usr/lib/sdk/llvm22/lib
+    build-commands:
+      - cd windows-linux && cargo --offline build --release -p snapline
+      - install -Dm755 windows-linux/target/release/snapline /app/bin/snapline
+      - install -Dm644 windows-linux/linux/dev.barayuda.Snapline.desktop -t /app/share/applications
+      - install -Dm644 windows-linux/linux/dev.barayuda.Snapline.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 windows-linux/linux/dev.barayuda.Snapline.png -t /app/share/icons/hicolor/512x512/apps
+    sources:
+      - type: dir
+        path: ../.. # the repository: the workspace names ../LICENSE.md
+        skip: [.git, macOS, site, windows-linux/target, .superpowers, build]
+      - cargo-sources.json
