@@ -10,6 +10,7 @@ pub mod drive;
 pub mod error;
 pub mod google;
 pub mod http;
+pub mod proxy;
 pub mod s3;
 
 /// Where an upload ended up.

@@ -158,6 +158,92 @@ pub fn reveal(file: &std::path::Path) {
     }
 }
 
+/// Windows' manual proxy for this user (Settings → Network & internet → Proxy → "Use a proxy server"), when it is
+/// on. Elsewhere `None`; ureq still reads `HTTPS_PROXY`.
+#[must_use]
+pub fn system_proxy() -> Option<snapline_upload::proxy::SystemProxy> {
+    #[cfg(windows)]
+    {
+        const KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
+        let enabled = registry::dword(KEY, "ProxyEnable").is_some_and(|v| v != 0);
+        let server = registry::string(KEY, "ProxyServer").unwrap_or_default();
+        let overrides = registry::string(KEY, "ProxyOverride").unwrap_or_default();
+        snapline_upload::proxy::SystemProxy::from_registry(enabled, &server, &overrides)
+    }
+    #[cfg(not(windows))]
+    None
+}
+
+/// Reading values under `HKEY_CURRENT_USER`.
+#[cfg(windows)]
+mod registry {
+    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+    use windows_sys::Win32::System::Registry::{
+        HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegGetValueW,
+    };
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(Some(0)).collect()
+    }
+
+    /// A text value, if it exists.
+    pub fn string(key: &str, name: &str) -> Option<String> {
+        let (key, name) = (wide(key), wide(name));
+        let mut buf = vec![0u16; 4096];
+        let mut bytes = u32::try_from(buf.len() * 2).unwrap_or(u32::MAX);
+        // SAFETY: the strings are NUL-terminated; `buf` holds `bytes` bytes; all live across the call.
+        let status = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                key.as_ptr(),
+                name.as_ptr(),
+                RRF_RT_REG_SZ,
+                std::ptr::null_mut(),
+                buf.as_mut_ptr().cast(),
+                &raw mut bytes,
+            )
+        };
+        // `bytes` counts the closing NUL too.
+        (status == ERROR_SUCCESS)
+            .then(|| String::from_utf16_lossy(&buf[..(bytes as usize / 2).saturating_sub(1)]))
+    }
+
+    /// A number value, if it exists.
+    pub fn dword(key: &str, name: &str) -> Option<u32> {
+        let (key, name) = (wide(key), wide(name));
+        let mut value = 0u32;
+        let mut bytes = 4u32;
+        // SAFETY: as above; `value` is the 4 bytes `bytes` says.
+        let status = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                key.as_ptr(),
+                name.as_ptr(),
+                RRF_RT_REG_DWORD,
+                std::ptr::null_mut(),
+                (&raw mut value).cast(),
+                &raw mut bytes,
+            )
+        };
+        (status == ERROR_SUCCESS).then_some(value)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        // CI sets this user's proxy first (see windows-linux.yml); never run it on your own PC with a proxy you need.
+        #[test]
+        #[ignore = "expects the proxy setting CI writes"]
+        fn reads_the_windows_proxy_setting() {
+            let p = super::super::system_proxy().expect("CI turned the proxy on");
+            assert_eq!(p.https.as_deref(), Some("127.0.0.1:3128"));
+            assert_eq!(
+                p.bypass,
+                vec!["<local>".to_owned(), "*.corp.example".to_owned()]
+            );
+        }
+    }
+}
+
 /// The value Snapline writes under `HKCU\…\Run`: the exe's path in quotes, as Windows wants for paths with spaces.
 #[must_use]
 #[cfg_attr(

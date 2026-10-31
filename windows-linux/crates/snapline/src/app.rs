@@ -592,8 +592,14 @@ impl App {
                     let _ = proxy.send_event(UserEvent::UploadProgress(p));
                 }
             };
-            let outcome =
-                upload_job::run(&job, &path, &secrets, &UreqTransport::new(), token, &report);
+            let outcome = upload_job::run(
+                &job,
+                &path,
+                &secrets,
+                &UreqTransport::with_system_proxy(platform::system_proxy()),
+                token,
+                &report,
+            );
             let _ = proxy.send_event(UserEvent::UploadFinished(outcome));
         });
     }

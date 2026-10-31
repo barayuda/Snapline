@@ -1,6 +1,7 @@
 //! HTTP for uploads: plain request and response values, a `Transport` to send them, and the ureq transport.
 
 use crate::error::UploadError;
+use crate::proxy::SystemProxy;
 use snapline_core::sigv4::HttpRequest;
 use std::io::Read;
 use std::time::Duration;
@@ -105,6 +106,8 @@ pub fn time_limit(body_len: usize) -> Duration {
 /// hangs the app.
 pub struct UreqTransport {
     direct: ureq::Agent,
+    /// Windows' proxy setting, with one agent per proxy address in it.
+    system: Option<(SystemProxy, Vec<(String, ureq::Agent)>)>,
 }
 
 impl Default for UreqTransport {
@@ -117,9 +120,48 @@ impl UreqTransport {
     /// Connects directly, or through `HTTPS_PROXY` / `ALL_PROXY` when one is set.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_system_proxy(None)
+    }
+
+    /// As `new`, plus `system` (Windows' proxy setting) for the hosts it covers. A proxy variable
+    /// (`HTTPS_PROXY`, `ALL_PROXY`) wins over the Windows setting, as it does for other tools.
+    #[must_use]
+    pub fn with_system_proxy(system: Option<SystemProxy>) -> Self {
+        let from_env = ureq::Proxy::try_from_env();
+        let system = system.filter(|_| from_env.is_none()).map(|s| {
+            let mut agents: Vec<(String, ureq::Agent)> = Vec::new();
+            for address in [&s.http, &s.https].into_iter().flatten() {
+                let uri = if address.contains("://") {
+                    address.clone()
+                } else {
+                    format!("http://{address}")
+                };
+                if agents.iter().all(|(a, _)| a != address)
+                    && let Ok(proxy) = ureq::Proxy::new(&uri)
+                {
+                    agents.push((address.clone(), agent(Some(proxy))));
+                }
+            }
+            (s, agents)
+        });
         Self {
-            direct: agent(ureq::Proxy::try_from_env()),
+            direct: agent(from_env),
+            system,
         }
+    }
+
+    /// The agent for `url` and the Windows proxy it goes through, if any.
+    fn route(&self, url: &url::Url) -> (&ureq::Agent, Option<&str>) {
+        self.system
+            .as_ref()
+            .and_then(|(s, agents)| {
+                let address = s.for_url(url)?;
+                agents
+                    .iter()
+                    .find(|(a, _)| a == address)
+                    .map(|(a, agent)| (agent, Some(a.as_str())))
+            })
+            .unwrap_or((&self.direct, None))
     }
 }
 
@@ -157,11 +199,24 @@ impl Read for Progress<'_> {
 impl Transport for UreqTransport {
     fn send(&self, request: &Request, progress: &dyn Fn(f64)) -> Result<Response, UploadError> {
         let host = request.url.host_str().unwrap_or("the server").to_owned();
+        let (agent, via) = self.route(&request.url);
         let unreachable = |e: ureq::Error| match e {
             ureq::Error::Timeout(_) => UploadError::message(format!(
                 "The upload to {host} timed out. Check the connection and try again."
             )),
-            e => UploadError::message(format!("Snapline could not reach {host}: {e}")),
+            ureq::Error::ConnectProxyFailed(why) if why.contains("responded 407") => {
+                UploadError::message(format!(
+                    "The proxy {} set in Windows asks Snapline to sign in, which Snapline cannot do yet. \
+                     Ask IT to let Snapline through, or use a network without a proxy.",
+                    via.unwrap_or("server")
+                ))
+            }
+            e => match via {
+                Some(proxy) => UploadError::message(format!(
+                    "Snapline could not reach {host} through the proxy {proxy} set in Windows: {e}"
+                )),
+                None => UploadError::message(format!("Snapline could not reach {host}: {e}")),
+            },
         };
         let limit = Some(time_limit(request.body.len()));
         let mut builder = ureq::http::Request::builder()
@@ -174,13 +229,8 @@ impl Transport for UreqTransport {
             let r = builder
                 .body(())
                 .map_err(|e| UploadError::message(e.to_string()))?;
-            self.direct
-                .run(
-                    self.direct
-                        .configure_request(r)
-                        .timeout_global(limit)
-                        .build(),
-                )
+            agent
+                .run(agent.configure_request(r).timeout_global(limit).build())
                 .map_err(unreachable)?
         } else {
             // An explicit length, so S3 gets Content-Length rather than chunked encoding.
@@ -193,13 +243,8 @@ impl Transport for UreqTransport {
             let r = builder
                 .body(ureq::SendBody::from_reader(&mut reader))
                 .map_err(|e| UploadError::message(e.to_string()))?;
-            self.direct
-                .run(
-                    self.direct
-                        .configure_request(r)
-                        .timeout_global(limit)
-                        .build(),
-                )
+            agent
+                .run(agent.configure_request(r).timeout_global(limit).build())
                 .map_err(unreachable)?
         };
         progress(1.0);
@@ -383,5 +428,64 @@ mod tests {
             transport.direct.config().tls_config().root_certs(),
             ureq::tls::RootCerts::PlatformVerifier
         ));
+    }
+
+    // Phase 5c: Windows' proxy setting is used for hosts it covers.
+    #[test]
+    fn requests_go_through_the_windows_proxy() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let seen = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut line = String::new();
+            BufReader::new(stream).read_line(&mut line).unwrap();
+            line
+        });
+        let system = crate::proxy::SystemProxy::from_registry(true, &address, "");
+        let request = Request::new(
+            "GET",
+            url::Url::parse("http://uploads.example.invalid/x").unwrap(),
+        );
+        let _ = UreqTransport::with_system_proxy(system).send(&request, &|_| {});
+        let line = seen.join().unwrap();
+        assert!(
+            line.starts_with("CONNECT uploads.example.invalid:80"),
+            "{line}"
+        );
+    }
+
+    // Review Focus 2: a local server on the bypass list is reached directly, even with a dead proxy.
+    #[test]
+    fn bypassed_hosts_are_reached_directly() {
+        let (url, _server) =
+            one_shot_server("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
+        let system = crate::proxy::SystemProxy::from_registry(true, "127.0.0.1:1", "127.0.0.1");
+        let response = UreqTransport::with_system_proxy(system)
+            .send(&Request::new("GET", url), &|_| {})
+            .unwrap();
+        assert_eq!(response.status, 200);
+    }
+
+    // Review Focus 1. `one_shot_server` plays the proxy: its URL's host:port is the proxy address.
+    #[test]
+    fn a_proxy_that_wants_a_sign_in_is_named() {
+        let (proxy_url, _proxy) = one_shot_server(
+            "HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        );
+        let address = format!(
+            "{}:{}",
+            proxy_url.host_str().unwrap(),
+            proxy_url.port().unwrap()
+        );
+        let system = crate::proxy::SystemProxy::from_registry(true, &address, "");
+        let request = Request::new(
+            "GET",
+            url::Url::parse("http://uploads.example.invalid/x").unwrap(),
+        );
+        let error = UreqTransport::with_system_proxy(system)
+            .send(&request, &|_| {})
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("asks Snapline to sign in"), "{error}");
     }
 }

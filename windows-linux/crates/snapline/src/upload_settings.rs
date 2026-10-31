@@ -211,7 +211,7 @@ impl SettingsApp {
         std::thread::spawn(move || {
             let open = |url: &url::Url| open::that(url.as_str()).is_ok();
             let result = google::sign_in(
-                &UreqTransport::new(),
+                &UreqTransport::with_system_proxy(crate::platform::system_proxy()),
                 &client,
                 &open,
                 Duration::from_secs(300),
@@ -236,7 +236,10 @@ impl SettingsApp {
         let (path, store) = (self.path.clone(), self.store);
         std::thread::spawn(move || {
             if let Some(token) = store.get(Secret::GoogleRefreshToken) {
-                google::sign_out(&UreqTransport::new(), &token);
+                google::sign_out(
+                    &UreqTransport::with_system_proxy(crate::platform::system_proxy()),
+                    &token,
+                );
             }
             let result = store.remove(Secret::GoogleRefreshToken).and_then(|()| {
                 Settings::update(&path, |s| {
