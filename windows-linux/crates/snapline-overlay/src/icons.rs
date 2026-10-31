@@ -107,6 +107,9 @@ fn outline(button: Button) -> PathBuilder {
         }
         Button::AutoHide => auto_hide(&mut pb),
         Button::CopyText => copy_text(&mut pb),
+        Button::Edit => sliders(&mut pb),
+        Button::Share => share(&mut pb),
+        Button::Print => printer(&mut pb),
         Button::Undo => {
             pb.move_to(9.0, 6.0);
             pb.line_to(4.0, 11.0);
@@ -190,4 +193,44 @@ fn copy_text(pb: &mut PathBuilder) {
     pb.line_to(15.5, 9.0);
     pb.move_to(12.0, 9.0);
     pb.line_to(12.0, 16.0);
+}
+
+/// Three sliders, for Edit in another app.
+fn sliders(pb: &mut PathBuilder) {
+    for (y, knob) in [(6.0, 15.0), (12.0, 8.0), (18.0, 13.0)] {
+        pb.move_to(4.0, y);
+        pb.line_to(20.0, y);
+        pb.push_circle(knob, y, 2.0);
+    }
+}
+
+/// An arrow leaving a box towards the top right (the Windows Share glyph), unlike Upload's straight-up arrow.
+fn share(pb: &mut PathBuilder) {
+    pb.move_to(11.0, 5.0);
+    pb.line_to(5.0, 5.0);
+    pb.line_to(5.0, 19.0);
+    pb.line_to(19.0, 19.0);
+    pb.line_to(19.0, 13.0);
+    pb.move_to(11.0, 13.0);
+    pb.line_to(20.0, 4.0);
+    pb.move_to(14.0, 4.0);
+    pb.line_to(20.0, 4.0);
+    pb.line_to(20.0, 10.0);
+}
+
+/// A printer: paper in, body, paper out.
+fn printer(pb: &mut PathBuilder) {
+    pb.move_to(7.0, 9.0);
+    pb.line_to(7.0, 4.0);
+    pb.line_to(17.0, 4.0);
+    pb.line_to(17.0, 9.0);
+    pb.move_to(7.0, 17.0);
+    pb.line_to(4.0, 17.0);
+    pb.line_to(4.0, 9.0);
+    pb.line_to(20.0, 9.0);
+    pb.line_to(20.0, 17.0);
+    pb.line_to(17.0, 17.0);
+    if let Some(r) = tiny_skia::Rect::from_xywh(7.0, 14.0, 10.0, 6.0) {
+        pb.push_rect(r);
+    }
 }

@@ -21,6 +21,11 @@ pub enum Command {
     Upload,
     Search(SearchEngine),
     CopyText,
+    /// Open in another app.
+    Edit,
+    /// The Windows Share window (Email on macOS).
+    Share,
+    Print,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -281,6 +286,12 @@ impl Session {
         render::render_selection(&o.screen, o.selection?, &all, &self.font)
     }
 
+    /// Pixels per point of the screen whose selection is exported (for saving at 100 %); 1 without a selection.
+    #[must_use]
+    pub fn export_scale(&self) -> f64 {
+        self.selected().map_or(1.0, |i| self.overlays[i].ui_scale)
+    }
+
     /// A command that needs a selection: beep without one. Waits while the selected screen is being scanned.
     pub(crate) fn request(&mut self, c: Command) -> Effect {
         let Some(i) = self.selected() else {
@@ -434,6 +445,9 @@ impl Session {
                 Effect::all()
             }
             Button::CopyText => self.request(Command::CopyText),
+            Button::Edit => self.request(Command::Edit),
+            Button::Share => self.request(Command::Share),
+            Button::Print => self.request(Command::Print),
         }
     }
 
@@ -660,6 +674,8 @@ impl Session {
                 'z' => self.undo(),
                 'a' => self.select_whole_screen(),
                 'd' => self.request(Command::Upload),
+                'e' => self.request(Command::Edit),
+                'p' => self.request(Command::Print),
                 _ => Effect::NONE,
             },
             Key::Char('+' | '=') => {
@@ -1406,5 +1422,33 @@ pub(crate) mod tests {
         s.pointer_move(0, pt(70.0, 40.0));
         assert_eq!(s.scan_done(0, Ok(vec![])).command, None, "still dragging");
         assert_eq!(s.pointer_up(0, pt(70.0, 40.0)).command, Some(Command::Save));
+    }
+
+    #[test]
+    fn ctrl_e_edits_and_ctrl_p_prints() {
+        let mut s = selected(1.0);
+        assert_eq!(s.key(Key::Char('e'), ctrl()).command, Some(Command::Edit));
+        assert_eq!(s.key(Key::Char('p'), ctrl()).command, Some(Command::Print));
+        assert_eq!(
+            click_button(&mut s, Button::Share, Mods::default()).command,
+            Some(Command::Share)
+        );
+    }
+
+    #[test]
+    fn edit_share_and_print_wait_for_the_scan_too() {
+        let mut s = selected(1.0);
+        s.begin_scan();
+        assert_eq!(s.key(Key::Char('p'), ctrl()).command, None);
+        assert_eq!(s.scan_done(0, Ok(vec![])).command, Some(Command::Print));
+    }
+
+    #[test]
+    fn export_scale_is_the_selected_screens() {
+        assert!((selected(1.5).export_scale() - 1.5).abs() < f64::EPSILON);
+        assert!(
+            (session(1, 2.0).export_scale() - 1.0).abs() < f64::EPSILON,
+            "no selection"
+        );
     }
 }

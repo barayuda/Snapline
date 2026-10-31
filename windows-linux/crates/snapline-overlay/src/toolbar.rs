@@ -22,6 +22,9 @@ pub enum Button {
     Engine(SearchEngine),
     AutoHide,
     CopyText,
+    Edit,
+    Share,
+    Print,
 }
 
 impl Button {
@@ -40,6 +43,9 @@ impl Button {
             Self::Search => "Search similar images",
             Self::AutoHide => "Auto-hide sensitive data (click a black box to show it)",
             Self::CopyText => "Copy text (Ctrl+Shift+C), read on this PC",
+            Self::Edit => "Edit in another app (Ctrl+E)",
+            Self::Share => "Share",
+            Self::Print => "Print (Ctrl+P)",
         }
     }
 }
@@ -58,9 +64,12 @@ pub const DRAW_BAR: [Button; 11] = [
     Button::Undo,
 ];
 
-pub const MAIN_BAR: [Button; 6] = [
+pub const MAIN_BAR: [Button; 9] = [
     Button::Upload,
     Button::Search,
+    Button::Edit,
+    Button::Share,
+    Button::Print,
     Button::Copy,
     Button::CopyText,
     Button::Save,
@@ -538,6 +547,24 @@ mod tests {
             DRAW_BAR[8..],
             [Button::Color, Button::AutoHide, Button::Undo]
         );
-        assert_eq!(MAIN_BAR[3], Button::CopyText);
+        assert_eq!(MAIN_BAR[6], Button::CopyText);
+    }
+
+    #[test]
+    fn the_main_bar_matches_macos() {
+        assert_eq!(
+            MAIN_BAR,
+            [
+                Button::Upload,
+                Button::Search,
+                Button::Edit,
+                Button::Share,
+                Button::Print,
+                Button::Copy,
+                Button::CopyText,
+                Button::Save,
+                Button::Close
+            ]
+        );
     }
 }

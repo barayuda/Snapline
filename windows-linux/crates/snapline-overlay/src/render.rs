@@ -355,6 +355,32 @@ fn draw_bars(out: &mut Pixmap, session: &Session, i: usize, bars: &[Bar]) {
     badge(out, &session.font, tip, at, false, INK, scale);
 }
 
+/// `image` scaled by `factor` (at most 1): sizes are rounded and never 0. For "save at 100 %" on high-DPI screens.
+#[must_use]
+pub fn downscale(image: &Pixmap, factor: f64) -> Option<Pixmap> {
+    let factor = factor.min(1.0);
+    let w = ((f64::from(image.width()) * factor).round() as u32).max(1);
+    let h = ((f64::from(image.height()) * factor).round() as u32).max(1);
+    let mut out = Pixmap::new(w, h)?;
+    let paint = tiny_skia::PixmapPaint {
+        quality: tiny_skia::FilterQuality::Bicubic,
+        ..tiny_skia::PixmapPaint::default()
+    };
+    let (sx, sy) = (
+        w as f32 / image.width() as f32,
+        h as f32 / image.height() as f32,
+    );
+    out.draw_pixmap(
+        0,
+        0,
+        image.as_ref(),
+        &paint,
+        Transform::from_scale(sx, sy),
+        None,
+    );
+    Some(out)
+}
+
 /// Auto-hide's boxes inside the selection: black when hidden, a dashed yellow outline when shown.
 fn draw_hide_boxes(out: &mut Pixmap, session: &Session, i: usize) {
     let scale = session.overlays[i].ui_scale;
@@ -813,5 +839,24 @@ mod tests {
         // The badge sits above the selection and grows to the right with the note.
         let differs = (180..400).any(|x| rgb(&plain, x, 86) != rgb(&noted, x, 86));
         assert!(differs, "the note should widen the badge");
+    }
+
+    // Review Focus 5.
+    #[test]
+    fn downscale_rounds_and_never_reaches_zero() {
+        let image = white(301, 1);
+        let half = downscale(&image, 1.0 / 1.5).unwrap();
+        assert_eq!((half.width(), half.height()), (201, 1));
+        let same = downscale(&image, 1.0).unwrap();
+        assert_eq!((same.width(), same.height()), (301, 1));
+        let mut marked = white(200, 100);
+        fill_rect(&mut marked, Rect::new(100.0, 50.0, 100.0, 50.0), BLACK, 255);
+        let small = downscale(&marked, 0.5).unwrap();
+        assert_eq!(
+            rgb(&small, 75, 37),
+            (0, 0, 0),
+            "the black quarter stays in its place"
+        );
+        assert_eq!(rgb(&small, 25, 12), (255, 255, 255));
     }
 }
