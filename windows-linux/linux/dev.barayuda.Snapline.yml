@@ -22,6 +22,7 @@ finish-args:
 modules:
   - name: leptonica
     buildsystem: cmake-ninja
+    builddir: true # both refuse to build inside their source folder
     config-opts: [-DCMAKE_BUILD_TYPE=Release, -DBUILD_SHARED_LIBS=ON, -DSW_BUILD=OFF]
     sources:
       - type: archive
@@ -29,6 +30,7 @@ modules:
         sha256: c73363397f96eb1295602bf44d708a994ad42046c791bf03ea0505d829bdb6a7
   - name: tesseract
     buildsystem: cmake-ninja
+    builddir: true
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
       - -DBUILD_SHARED_LIBS=ON
