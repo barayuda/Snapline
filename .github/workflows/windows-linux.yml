@@ -193,5 +193,8 @@ jobs:
           cache-key: flatpak-builder-${{ matrix.arch }}-${{ hashFiles('windows-linux/Cargo.lock', 'windows-linux/linux/dev.barayuda.Snapline.yml') }}
       - name: Snapline starts and finds its OCR data
         run: |
-          flatpak-builder --run flatpak_app windows-linux/linux/dev.barayuda.Snapline.yml snapline --version | tee version.txt
+          # The container has no machine-id and no FUSE: give it one, and run without rofiles-fuse.
+          [ -s /etc/machine-id ] || tr -d - </proc/sys/kernel/random/uuid >/etc/machine-id
+          flatpak-builder --disable-rofiles-fuse --run flatpak_app windows-linux/linux/dev.barayuda.Snapline.yml \
+            snapline --version | tee version.txt
           grep -q 'English data in /app/share/tessdata' version.txt
