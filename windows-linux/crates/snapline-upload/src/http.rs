@@ -100,9 +100,12 @@ pub fn time_limit(body_len: usize) -> Duration {
     Duration::from_secs(60 + (body_len / (32 * 1024)) as u64)
 }
 
-/// The real transport: ureq with rustls. Each request has a time limit (see `time_limit`), so a dead network
-/// never hangs the app.
-pub struct UreqTransport(ureq::Agent);
+/// The real transport: ureq with rustls, checking certificates against the system's store (so a company's own
+/// root, added to Windows, is trusted). Each request has a time limit (see `time_limit`), so a dead network never
+/// hangs the app.
+pub struct UreqTransport {
+    direct: ureq::Agent,
+}
 
 impl Default for UreqTransport {
     fn default() -> Self {
@@ -111,15 +114,28 @@ impl Default for UreqTransport {
 }
 
 impl UreqTransport {
+    /// Connects directly, or through `HTTPS_PROXY` / `ALL_PROXY` when one is set.
     #[must_use]
     pub fn new() -> Self {
-        let config = ureq::Agent::config_builder()
-            .http_status_as_error(false)
-            .timeout_connect(Some(Duration::from_secs(15)))
-            .user_agent("Snapline")
-            .build();
-        Self(config.into())
+        Self {
+            direct: agent(ureq::Proxy::try_from_env()),
+        }
     }
+}
+
+fn agent(proxy: Option<ureq::Proxy>) -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .timeout_connect(Some(Duration::from_secs(15)))
+        .user_agent("Snapline")
+        .proxy(proxy)
+        .tls_config(
+            ureq::tls::TlsConfig::builder()
+                .root_certs(ureq::tls::RootCerts::PlatformVerifier)
+                .build(),
+        )
+        .build()
+        .into()
 }
 
 /// Reads the body out and reports how much has gone.
@@ -158,8 +174,13 @@ impl Transport for UreqTransport {
             let r = builder
                 .body(())
                 .map_err(|e| UploadError::message(e.to_string()))?;
-            self.0
-                .run(self.0.configure_request(r).timeout_global(limit).build())
+            self.direct
+                .run(
+                    self.direct
+                        .configure_request(r)
+                        .timeout_global(limit)
+                        .build(),
+                )
                 .map_err(unreachable)?
         } else {
             // An explicit length, so S3 gets Content-Length rather than chunked encoding.
@@ -172,8 +193,13 @@ impl Transport for UreqTransport {
             let r = builder
                 .body(ureq::SendBody::from_reader(&mut reader))
                 .map_err(|e| UploadError::message(e.to_string()))?;
-            self.0
-                .run(self.0.configure_request(r).timeout_global(limit).build())
+            self.direct
+                .run(
+                    self.direct
+                        .configure_request(r)
+                        .timeout_global(limit)
+                        .build(),
+                )
                 .map_err(unreachable)?
         };
         progress(1.0);
@@ -347,5 +373,15 @@ mod tests {
         assert_eq!(time_limit(0), Duration::from_secs(60));
         let twenty_mb = time_limit(20 * 1024 * 1024);
         assert!(twenty_mb >= Duration::from_mins(11), "{twenty_mb:?}");
+    }
+
+    // Phase 5c: networks that inspect TLS add their own root to Windows, so the system store must be used.
+    #[test]
+    fn certificates_come_from_the_system_store() {
+        let transport = UreqTransport::new();
+        assert!(matches!(
+            transport.direct.config().tls_config().root_certs(),
+            ureq::tls::RootCerts::PlatformVerifier
+        ));
     }
 }
