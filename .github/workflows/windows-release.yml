@@ -12,6 +12,8 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    # Azure trusts this environment (an exact federated-credential subject), not the tag name, which it cannot match.
+    environment: release
     permissions:
       contents: read
       id-token: write # Azure sign-in through OIDC, only used when signing is set up

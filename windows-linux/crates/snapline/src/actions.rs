@@ -73,7 +73,8 @@ pub fn run(command: Command, image: &Pixmap, settings: &Settings) -> Result<Opti
     }
 }
 
-/// Writes `png` to the Snapline temp folder for another app to open; Windows cleans the temp folder up.
+/// Writes `png` to the Snapline temp folder for another app to open. Nothing deletes it but Storage Sense, Disk
+/// Cleanup or the user.
 pub fn temp_png(png: &[u8], name: &str) -> Result<PathBuf, String> {
     let dir = std::env::temp_dir().join("Snapline");
     std::fs::create_dir_all(&dir)

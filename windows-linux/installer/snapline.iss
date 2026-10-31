@@ -29,10 +29,12 @@ LicenseFile=..\..\LICENSE.md
 OutputBaseFilename=Snapline-Setup-{#Version}
 UninstallDisplayIcon={app}\snapline.exe
 UninstallDisplayName=Snapline
-; The app's single-instance mutex: a running Snapline is closed before files are replaced.
-AppMutex=Local\dev.barayuda.snapline
-CloseApplications=yes
+; A running Snapline is ended in [Code] before files are replaced or removed; force is the backstop.
+CloseApplications=force
 RestartApplications=no
+; An upgrade must not turn "launch at sign-in" back on after the user turned it off in Snapline or Task Manager.
+; With the box unticked, Setup leaves whatever is set now.
+UsePreviousTasks=no
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -57,3 +59,24 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupA
 
 [Run]
 Filename: "{app}\snapline.exe"; Description: "Start Snapline"; Flags: nowait postinstall skipifsilent
+
+[Code]
+// Snapline lives in the tray with no window to close politely, so Setup ends it before replacing or removing it.
+procedure StopSnapline;
+var
+  Code: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM snapline.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  StopSnapline;
+  Result := '';
+end;
+
+function InitializeUninstall(): Boolean;
+begin
+  StopSnapline;
+  Result := True;
+end;

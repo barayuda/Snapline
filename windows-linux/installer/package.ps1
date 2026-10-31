@@ -25,5 +25,6 @@ if (-not $SumsOnly) {
 $sums = Get-ChildItem $Out -File | Where-Object Name -ne 'SHA256SUMS.txt' | Sort-Object Name | ForEach-Object {
     "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
 }
-Set-Content -Path (Join-Path $Out 'SHA256SUMS.txt') -Value $sums -Encoding ascii
+# Unix line endings: `sha256sum -c` on Mac and Linux rejects CRLF.
+[IO.File]::WriteAllText((Join-Path $Out 'SHA256SUMS.txt'), (($sums -join "`n") + "`n"))
 Get-ChildItem $Out | Format-Table Name, Length
