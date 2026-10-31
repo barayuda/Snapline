@@ -187,14 +187,14 @@ jobs:
       - uses: actions/checkout@v7
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6.8
         with:
-          bundle: Snapline-${{ matrix.arch }}.flatpak
+          bundle: Snapline.flatpak # the action adds the architecture to the artifact name
           manifest-path: windows-linux/linux/dev.barayuda.Snapline.yml
           arch: ${{ matrix.arch }}
           cache-key: flatpak-builder-${{ matrix.arch }}-${{ hashFiles('windows-linux/Cargo.lock', 'windows-linux/linux/dev.barayuda.Snapline.yml') }}
       - name: Snapline starts and finds its OCR data
         run: |
-          # The container has no machine-id and no FUSE: give it one, and run without rofiles-fuse.
+          # The container has no machine-id and no FUSE (flatpak-builder --run needs rofiles-fuse): give it a
+          # machine-id and run the finished build folder with `flatpak build` instead.
           [ -s /etc/machine-id ] || tr -d - </proc/sys/kernel/random/uuid >/etc/machine-id
-          flatpak-builder --disable-rofiles-fuse --run flatpak_app windows-linux/linux/dev.barayuda.Snapline.yml \
-            snapline --version | tee version.txt
+          flatpak build flatpak_app snapline --version | tee version.txt
           grep -q 'English data in /app/share/tessdata' version.txt
