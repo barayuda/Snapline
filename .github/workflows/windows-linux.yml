@@ -32,16 +32,6 @@ jobs:
         run: |
           cargo clippy --workspace --exclude snapline --all-targets -- -D warnings
           cargo test --workspace --exclude snapline
-      # Windows Server images have the OCR API but may lack its English data; the OCR test needs it.
-      - name: English text recognition (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        continue-on-error: true
-        timeout-minutes: 10
-        run: |
-          Get-WindowsCapability -Online -Name "Language.OCR*" | Format-Table Name, State
-          Get-WindowsCapability -Online -Name "Language.OCR~~~en-US*" | Where-Object State -ne Installed | Add-WindowsCapability -Online
-          Get-WindowsCapability -Online -Name "Language.OCR~~~en-US*" | Format-Table Name, State
       - name: Lint and test (Windows)
         if: runner.os == 'Windows'
         run: |
