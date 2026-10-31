@@ -54,3 +54,34 @@ jobs:
           name: snapline-windows
           path: windows-linux/target/release/snapline.exe
           if-no-files-found: error
+      - name: Build the installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (Test-Path $iscc) { "Inno Setup: preinstalled" } else { "Inno Setup: installing"; choco install innosetup --no-progress -y }
+          $version = (cargo pkgid -p snapline) -replace '.*[#@]', ''
+          & $iscc /Qp /DVersion=$version "/DSource=$PWD\target\release\snapline.exe" "/O$PWD\target\installer" installer\snapline.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Install, check and uninstall
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem target\installer\Snapline-Setup-*.exe | Select-Object -First 1
+          Start-Process $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=startup' -Wait
+          $exe = "$env:LOCALAPPDATA\Programs\Snapline\snapline.exe"
+          if (-not (Test-Path $exe)) { throw "not installed" }
+          $run = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run').Snapline
+          if ($run -ne "`"$exe`"") { throw "Run value is '$run'" }
+          $uninstall = "$env:LOCALAPPDATA\Programs\Snapline\unins000.exe"
+          Start-Process $uninstall -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          Start-Sleep -Seconds 2
+          if (Test-Path $exe) { throw "still installed" }
+          if ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run').Snapline) { throw "Run value left" }
+          "install, sign-in entry and uninstall: ok"
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'Windows'
+        with:
+          name: snapline-windows-installer
+          path: windows-linux/target/installer/*.exe
+          if-no-files-found: error
