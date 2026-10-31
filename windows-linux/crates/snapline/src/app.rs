@@ -372,12 +372,12 @@ impl App {
             return;
         };
         let image = cap.session.export();
-        self.capture = None; // closes the overlay windows before any dialog opens
-        if command == Command::Cancel {
-            return;
+        if command != Command::Cancel && image.is_none() {
+            return platform::beep(); // nothing selected: keep the capture open
         }
+        self.capture = None; // closes the overlay windows before any dialog opens
         let Some(image) = image else {
-            return platform::beep();
+            return;
         };
         match command {
             Command::Upload | Command::Search(_) => {

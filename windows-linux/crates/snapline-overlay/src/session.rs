@@ -310,10 +310,28 @@ impl Session {
             Ok(boxes) => o.hide_boxes = boxes,
             Err(note) => o.scan_note = Some(note),
         }
-        let ready = self.selected().is_none_or(|k| !self.overlays[k].scanning);
-        Effect {
-            command: if ready { self.pending.take() } else { None },
-            ..Effect::all()
+        self.release_held()
+    }
+
+    /// Runs the held command once the selected screen is scanned and nothing is being dragged. Without a
+    /// selection there is nothing to export: the command is dropped with a beep and the capture stays open.
+    fn release_held(&mut self) -> Effect {
+        if self.pending.is_none() || self.overlays.iter().any(Overlay::is_dragging) {
+            return Effect::all();
+        }
+        match self.selected() {
+            None => {
+                self.pending = None;
+                Effect {
+                    beep: true,
+                    ..Effect::all()
+                }
+            }
+            Some(k) if self.overlays[k].scanning => Effect::all(),
+            Some(_) => Effect {
+                command: self.pending.take(),
+                ..Effect::all()
+            },
         }
     }
 
@@ -564,7 +582,7 @@ impl Session {
             _ => {}
         }
         o.drag = Drag::None;
-        Effect::all()
+        self.release_held()
     }
 
     /// Wheel: font size while typing or over text with the text tool, otherwise the stroke width.
@@ -1359,5 +1377,34 @@ pub(crate) mod tests {
         assert_eq!(s.key(Key::Char('c'), ctrl()).command, Some(Command::Copy));
         click_button(&mut s, Button::AutoHide, Mods::default());
         assert!(!s.auto_hide);
+    }
+
+    // Review finding: a held command must not close the capture with nothing to export.
+    #[test]
+    fn a_held_command_is_dropped_when_the_selection_is_cleared() {
+        let mut s = selected(1.0);
+        s.begin_scan();
+        s.key(Key::Char('c'), ctrl());
+        // A click outside clears the selection: the held Copy is dropped there, with a beep.
+        s.pointer_down(0, pt(300.0, 200.0), Mods::default());
+        let up = s.pointer_up(0, pt(300.0, 200.0));
+        assert!(up.beep && up.command.is_none());
+        assert_eq!(
+            s.scan_done(0, Ok(vec![])).command,
+            None,
+            "and never runs later"
+        );
+    }
+
+    // Review finding: a held command must not export a selection that is still being dragged.
+    #[test]
+    fn a_held_command_waits_for_a_drag_to_end() {
+        let mut s = selected(1.0);
+        s.begin_scan();
+        s.key(Key::Char('s'), ctrl());
+        s.pointer_down(0, pt(50.0, 30.0), Mods::default());
+        s.pointer_move(0, pt(70.0, 40.0));
+        assert_eq!(s.scan_done(0, Ok(vec![])).command, None, "still dragging");
+        assert_eq!(s.pointer_up(0, pt(70.0, 40.0)).command, Some(Command::Save));
     }
 }
