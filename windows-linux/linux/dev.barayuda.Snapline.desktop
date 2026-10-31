@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Snapline
+GenericName=Screenshot Tool
+Comment=Capture the screen, mark it up, and hide sensitive data before you share
+Exec=snapline
+Icon=dev.barayuda.Snapline
+Terminal=false
+Categories=Graphics;
+Keywords=screenshot;capture;annotate;
+StartupNotify=false

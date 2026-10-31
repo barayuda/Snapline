@@ -53,3 +53,22 @@ apple-native-keyring-store = { version = "1.0.2", features = ["keychain"] }
 
 [dev-dependencies]
 snapline-upload = { path = "../snapline-upload", features = ["fake"] }
+
+# The .deb (cargo-deb). `$auto` finds the libraries snapline links; the ones winit and eframe load at run time
+# (Xlib, Xcursor, Xi, Xrandr, xkbcommon-x11, EGL) are listed by hand.
+[package.metadata.deb]
+name = "snapline"
+maintainer = "Barayuda <barayuda@users.noreply.github.com>"
+copyright = "2026, Barayuda"
+license-file = ["../../../LICENSE.md", "0"]
+extended-description = "A screenshot tool for the tray: capture, mark up, copy, save, upload. Emails, card numbers and keys are covered before you share. Needs an X11 session."
+section = "graphics"
+priority = "optional"
+depends = "$auto, tesseract-ocr-eng, xdg-utils, libx11-6, libxcursor1, libxi6, libxrandr2, libxkbcommon-x11-0, libegl1"
+recommends = "gnome-keyring | kwalletmanager"
+assets = [
+  ["target/release/snapline", "usr/bin/", "755"],
+  ["../../linux/dev.barayuda.Snapline.desktop", "usr/share/applications/", "644"],
+  ["../../linux/dev.barayuda.Snapline.metainfo.xml", "usr/share/metainfo/", "644"],
+  ["../../linux/dev.barayuda.Snapline.png", "usr/share/icons/hicolor/512x512/apps/", "644"],
+]

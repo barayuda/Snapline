@@ -25,7 +25,8 @@ flatpak)
   ;;
 run)
   shift
-  in_vm "cd '$here' && CARGO_TARGET_DIR=\$HOME/snapline-target $(printf '%q ' "$@")"
+  # No debug info: the target folder lives on the Mac's disk (through OrbStack) and filled it once.
+  in_vm "cd '$here' && CARGO_TARGET_DIR=\$HOME/snapline-target CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 $(printf '%q ' "$@")"
   ;;
 *)
   sed -n '2,6p' "$0"

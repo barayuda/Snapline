@@ -40,6 +40,35 @@ jobs:
           sudo apt-get install -y --no-install-recommends gnome-keyring
           xvfb-run -a dbus-run-session -- bash -c \
             'echo -n ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null && cargo test -p snapline -- --ignored'
+      - name: Package (.deb, AppImage)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y --no-install-recommends desktop-file-utils appstream
+          desktop-file-validate linux/dev.barayuda.Snapline.desktop
+          appstreamcli validate --no-net linux/dev.barayuda.Snapline.metainfo.xml
+          cargo install cargo-deb --version 3.8.0 --locked
+          cargo build --release -p snapline
+          linux/package.sh "$(cargo pkgid -p snapline | sed 's/.*[#@]//')"
+      - name: The .deb installs on a clean Ubuntu and finds its OCR data
+        if: runner.os == 'Linux'
+        run: |
+          docker run --rm -v "$PWD/target/dist:/dist" ubuntu:24.04 bash -c \
+            'apt-get update -qq && apt-get install -y -qq /dist/snapline_*.deb >/dev/null && snapline --version' | tee version.txt
+          grep -q 'English data in /usr/share/tesseract-ocr/5/tessdata' version.txt
+      - name: The AppImage carries Tesseract and its data
+        if: runner.os == 'Linux'
+        run: |
+          cd target/dist
+          ./Snapline-*.AppImage --appimage-extract >/dev/null
+          ls squashfs-root/usr/lib | grep -q libtesseract
+          env -u TESSDATA_PREFIX ./Snapline-*.AppImage --appimage-extract-and-run --version | grep -q 'English data in /tmp/'
+          rm -rf squashfs-root
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'Linux'
+        with:
+          name: snapline-linux-${{ runner.arch }}
+          path: windows-linux/target/dist/*
+          if-no-files-found: error
       - name: Lint and test (Windows)
         if: runner.os == 'Windows'
         run: |

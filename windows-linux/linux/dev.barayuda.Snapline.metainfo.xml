@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.barayuda.Snapline</id>
+  <name>Snapline</name>
+  <summary>Capture, mark up, and hide sensitive data before you share</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>PolyForm-Noncommercial-1.0.0</project_license>
+  <developer id="dev.barayuda">
+    <name>Barayuda</name>
+  </developer>
+  <description>
+    <p>Snapline is a screenshot tool for the tray. Drag over an area, draw on it, then copy, save, upload or email it.
+      Emails, card numbers and keys are covered on your computer before anyone else sees them.</p>
+    <p>This preview needs an X11 session.</p>
+  </description>
+  <launchable type="desktop-id">dev.barayuda.Snapline.desktop</launchable>
+  <url type="homepage">https://github.com/barayuda/Snapline</url>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/barayuda/Snapline/main/Assets/banner.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-11-01"/>
+  </releases>
+</component>
