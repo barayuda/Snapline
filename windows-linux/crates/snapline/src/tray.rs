@@ -53,19 +53,28 @@ pub fn menu(working: &[String], failed: &[String]) -> Vec<Entry> {
     menu
 }
 
-/// Said once when the desktop shows no tray icons.
+/// Said once when the desktop shows no tray icons. `settings` is the command that opens the settings.
 #[must_use]
-pub fn no_tray_note(working: &[String]) -> String {
+pub fn no_tray_note(working: &[String], settings: &str) -> String {
     let take = if working.is_empty() {
-        "No capture shortcut works either. Run `snapline --settings` to choose one.".to_owned()
+        format!("No capture shortcut works either. Run `{settings}` to choose one.")
     } else {
         format!("{} still takes a screenshot.", working.join(" or "))
     };
     format!(
         "Your desktop shows no tray icons, so Snapline's icon is hidden. {take}\n\nOn GNOME, install the \
          \"AppIndicator and KStatusNotifierItem Support\" extension to see the icon. Settings open with \
-         `snapline --settings`."
+         `{settings}`."
     )
+}
+
+/// The point whose monitor gets a popup: the middle of the tray icon, else the pointer (Linux gives no icon
+/// position), else the top-left corner of the desktop.
+#[must_use]
+pub fn popup_monitor_point(tray: Option<Rect>, pointer: Option<(i32, i32)>) -> (i32, i32) {
+    tray.map(|a| ((a.x + a.width / 2.0) as i32, (a.y + a.height / 2.0) as i32))
+        .or(pointer)
+        .unwrap_or((0, 0))
 }
 
 /// The tray icon. Its menu choices arrive as `UserEvent::Menu`, a left click as `UserEvent::TrayClicked`.
@@ -263,15 +272,31 @@ mod tests {
         )));
     }
 
+    // Final review: Linux gives no tray position, and (0, 0) put popups on the leftmost monitor. Without one, the
+    // pointer picks the monitor (the popup then sits in its bottom-right corner).
+    #[test]
+    fn the_pointer_picks_the_popup_monitor_when_the_tray_has_no_position() {
+        let tray = Rect::new(1800.0, 1050.0, 24.0, 24.0);
+        assert_eq!(
+            popup_monitor_point(Some(tray), Some((10, 10))),
+            (1812, 1062)
+        );
+        assert_eq!(popup_monitor_point(None, Some((2500, 300))), (2500, 300));
+        assert_eq!(popup_monitor_point(None, None), (0, 0));
+    }
+
     // Review Focus 3: GNOME without the AppIndicator extension, i3.
     #[test]
     fn no_tray_note_says_how_to_get_the_icon() {
-        let note = no_tray_note(&["Ctrl+Shift+1".into()]);
+        let settings = "flatpak run dev.barayuda.Snapline --settings";
+        let note = no_tray_note(&["Ctrl+Shift+1".into()], settings);
         assert!(
-            note.contains("Ctrl+Shift+1") && note.contains("AppIndicator"),
+            note.contains("Ctrl+Shift+1")
+                && note.contains("AppIndicator")
+                && note.contains(settings),
             "{note}"
         );
-        let note = no_tray_note(&[]);
-        assert!(note.contains("--settings"), "{note}");
+        let note = no_tray_note(&[], settings);
+        assert!(note.contains("choose one"), "{note}");
     }
 }

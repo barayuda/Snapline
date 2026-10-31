@@ -12,6 +12,19 @@ pub use linux::{
 #[cfg(target_os = "linux")]
 pub use linux::{keyring_unavailable as linux_keyring_unavailable, take_focus};
 
+/// The command that opens Snapline's settings from a terminal (for when there is no tray to open them from).
+#[must_use]
+pub fn settings_command() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        linux::settings_command_for(&linux::install())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        "snapline --settings".to_owned()
+    }
+}
+
 /// Where Snapline keeps secrets, by the name users know.
 pub const SECRET_STORE: &str = if cfg!(windows) {
     "Credential Manager"

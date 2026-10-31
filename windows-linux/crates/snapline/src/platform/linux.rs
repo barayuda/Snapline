@@ -318,6 +318,24 @@ pub fn install() -> Install {
     Install::Plain(std::env::current_exe().unwrap_or_else(|_| "snapline".into()))
 }
 
+/// The command that opens Snapline's settings, as the user would type it in a terminal.
+#[must_use]
+pub fn settings_command_for(install: &Install) -> String {
+    let program = match install {
+        Install::Flatpak(id) => format!("flatpak run {id}"),
+        Install::Plain(path) if path == Path::new("/usr/bin/snapline") => "snapline".to_owned(),
+        Install::AppImage(path) | Install::Plain(path) => {
+            let path = path.to_string_lossy();
+            if path.contains(|c: char| c.is_whitespace() || "'\"$`\\&;|()<>*?!#~".contains(c)) {
+                format!("'{}'", path.replace('\'', r"'\''"))
+            } else {
+                path.into_owned()
+            }
+        }
+    };
+    format!("{program} --settings")
+}
+
 /// The `Exec=` value. Inside quotes the desktop entry spec wants `"`, `` ` ``, `$` and `\` escaped, and `%` doubled.
 #[must_use]
 pub fn exec_line(install: &Install) -> String {
@@ -516,6 +534,25 @@ mod tests {
             Path::new("/run/user/1000/app/dev.barayuda.Snapline")
         );
         assert_eq!(runtime_dir_for(base.clone(), None), base);
+    }
+
+    // Final review: AppImage and Flatpak users have no `snapline` command.
+    #[test]
+    fn the_settings_command_matches_the_install() {
+        assert_eq!(
+            settings_command_for(&Install::Flatpak("dev.barayuda.Snapline".into())),
+            "flatpak run dev.barayuda.Snapline --settings"
+        );
+        assert_eq!(
+            settings_command_for(&Install::AppImage(
+                "/home/me/Apps/Snapline 0.1.AppImage".into()
+            )),
+            "'/home/me/Apps/Snapline 0.1.AppImage' --settings"
+        );
+        assert_eq!(
+            settings_command_for(&Install::Plain("/usr/bin/snapline".into())),
+            "snapline --settings"
+        );
     }
 
     #[test]

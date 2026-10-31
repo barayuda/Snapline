@@ -642,9 +642,7 @@ impl App {
         close_after: Option<f64>,
     ) {
         let anchor = self.tray.as_ref().and_then(Tray::rect);
-        let centre = anchor.map_or((0, 0), |a| {
-            ((a.x + a.width / 2.0) as i32, (a.y + a.height / 2.0) as i32)
-        });
+        let centre = tray::popup_monitor_point(anchor, platform::cursor_position());
         let monitor = event_loop
             .available_monitors()
             .find(|m| {
@@ -935,7 +933,10 @@ impl ApplicationHandler<UserEvent> for App {
             }
             UserEvent::TrayMissing if !self.told_tray_missing => {
                 self.told_tray_missing = true;
-                platform::show_info(&tray::no_tray_note(&self.labels));
+                platform::show_info(&tray::no_tray_note(
+                    &self.labels,
+                    &platform::settings_command(),
+                ));
             }
             _ => {}
         }
