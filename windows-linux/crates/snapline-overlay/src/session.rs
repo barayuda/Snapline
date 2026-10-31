@@ -211,10 +211,6 @@ pub(crate) fn contains(r: Rect, p: Point) -> bool {
     p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height
 }
 
-fn intersects(a: Rect, b: Rect) -> bool {
-    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
-}
-
 pub struct Session {
     pub overlays: Vec<Overlay>,
     pub tool: Option<Tool>,
@@ -332,7 +328,7 @@ impl Session {
             .iter()
             .copied()
             .enumerate()
-            .filter(|(_, b)| intersects(b.rect, sel))
+            .filter(|(_, b)| toolbar::overlaps(b.rect, sel))
             .collect()
     }
 
@@ -415,6 +411,11 @@ impl Session {
                 self.search_open = false;
                 self.request(Command::Search(engine))
             }
+            Button::AutoHide => {
+                self.auto_hide = !self.auto_hide;
+                Effect::all()
+            }
+            Button::CopyText => self.request(Command::CopyText),
         }
     }
 
@@ -628,7 +629,11 @@ impl Session {
             Key::Up => self.nudge(0.0, -1.0, mods),
             Key::Down => self.nudge(0.0, 1.0, mods),
             Key::Char(c) if Self::is_shortcut(mods) => match c.to_ascii_lowercase() {
-                'c' => self.request(Command::Copy),
+                'c' => self.request(if mods.shift {
+                    Command::CopyText
+                } else {
+                    Command::Copy
+                }),
                 's' => self.request(if mods.shift {
                     Command::SaveAs
                 } else {
@@ -1337,5 +1342,22 @@ pub(crate) mod tests {
         assert!(!s.overlays[0].hide_boxes[0].hidden);
         s.undo();
         assert!(s.overlays[0].hide_boxes[0].hidden, "then the box click");
+    }
+
+    #[test]
+    fn ctrl_shift_c_copies_text_and_the_eye_turns_auto_hide_off() {
+        let mut s = selected(1.0);
+        let shift = Mods {
+            ctrl: true,
+            shift: true,
+            alt: false,
+        };
+        assert_eq!(
+            s.key(Key::Char('C'), shift).command,
+            Some(Command::CopyText)
+        );
+        assert_eq!(s.key(Key::Char('c'), ctrl()).command, Some(Command::Copy));
+        click_button(&mut s, Button::AutoHide, Mods::default());
+        assert!(!s.auto_hide);
     }
 }

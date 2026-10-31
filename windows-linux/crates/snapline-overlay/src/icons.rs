@@ -105,6 +105,8 @@ fn outline(button: Button) -> PathBuilder {
             pb.move_to(12.0, 5.0);
             pb.line_to(12.0, 19.0);
         }
+        Button::AutoHide => auto_hide(&mut pb),
+        Button::CopyText => copy_text(&mut pb),
         Button::Undo => {
             pb.move_to(9.0, 6.0);
             pb.line_to(4.0, 11.0);
@@ -160,4 +162,32 @@ fn outline(button: Button) -> PathBuilder {
         | Button::Engine(_) => {}
     }
     pb
+}
+
+/// An eye with a slash.
+fn auto_hide(pb: &mut PathBuilder) {
+    if let Some(r) = tiny_skia::Rect::from_xywh(3.0, 7.0, 18.0, 10.0) {
+        pb.push_oval(r);
+    }
+    pb.push_circle(12.0, 12.0, 2.5);
+    pb.move_to(4.0, 20.0);
+    pb.line_to(20.0, 4.0);
+}
+
+/// Viewfinder corners around a T.
+fn copy_text(pb: &mut PathBuilder) {
+    for [a, b, c] in [
+        [(4.0, 9.0), (4.0, 4.0), (9.0, 4.0)],
+        [(15.0, 4.0), (20.0, 4.0), (20.0, 9.0)],
+        [(20.0, 15.0), (20.0, 20.0), (15.0, 20.0)],
+        [(9.0, 20.0), (4.0, 20.0), (4.0, 15.0)],
+    ] {
+        pb.move_to(a.0, a.1);
+        pb.line_to(b.0, b.1);
+        pb.line_to(c.0, c.1);
+    }
+    pb.move_to(8.5, 9.0);
+    pb.line_to(15.5, 9.0);
+    pb.move_to(12.0, 9.0);
+    pb.line_to(12.0, 16.0);
 }

@@ -20,6 +20,8 @@ pub enum Button {
     Search,
     /// An entry of the search menu (a text label).
     Engine(SearchEngine),
+    AutoHide,
+    CopyText,
 }
 
 impl Button {
@@ -36,11 +38,13 @@ impl Button {
             Self::Swatch(_) | Self::Engine(_) => "",
             Self::Upload => "Upload and copy link (Ctrl+D)",
             Self::Search => "Search similar images",
+            Self::AutoHide => "Auto-hide sensitive data (click a black box to show it)",
+            Self::CopyText => "Copy text (Ctrl+Shift+C), read on this PC",
         }
     }
 }
 
-pub const DRAW_BAR: [Button; 10] = [
+pub const DRAW_BAR: [Button; 11] = [
     Button::Tool(Tool::Pencil),
     Button::Tool(Tool::Line),
     Button::Tool(Tool::Arrow),
@@ -50,13 +54,15 @@ pub const DRAW_BAR: [Button; 10] = [
     Button::Tool(Tool::Text),
     Button::Tool(Tool::Hide),
     Button::Color,
+    Button::AutoHide,
     Button::Undo,
 ];
 
-pub const MAIN_BAR: [Button; 5] = [
+pub const MAIN_BAR: [Button; 6] = [
     Button::Upload,
     Button::Search,
     Button::Copy,
+    Button::CopyText,
     Button::Save,
     Button::Close,
 ];
@@ -119,43 +125,45 @@ fn bar(buttons: &[Button], horizontal: bool, origin: Point, s: f64) -> Bar {
     }
 }
 
-fn overlaps(a: Rect, b: Rect) -> bool {
+pub(crate) fn overlaps(a: Rect, b: Rect) -> bool {
     a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 }
 
-/// Moves `r` out of `obstacle`: first sideways (left, then right), then up, then down; the first spot
-/// that is on screen and clear wins. Keeps `r` where it is when nothing fits.
-fn step_aside(r: Rect, obstacle: Rect, gap: f64, bounds: Rect) -> Rect {
-    if !overlaps(r, obstacle) {
+/// Moves `r` off the `obstacles` to the nearest spot that is on screen and clear of all of them. The spots tried
+/// line `r` up beside the obstacles' edges (left, right, above, below), alone or combined, so it can clear two
+/// bars at once. Keeps `r` where it is when nothing fits.
+fn step_aside(r: Rect, obstacles: &[Rect], gap: f64, bounds: Rect) -> Rect {
+    let clear = |c: &Rect| obstacles.iter().all(|o| !overlaps(*c, *o));
+    if clear(&r) {
         return r;
     }
-    let candidates = [
-        Rect {
-            x: obstacle.x - r.width - gap,
-            ..r
-        },
-        Rect {
-            x: obstacle.x + obstacle.width + gap,
-            ..r
-        },
-        Rect {
-            y: obstacle.y - r.height - gap,
-            ..r
-        },
-        Rect {
-            y: obstacle.y + obstacle.height + gap,
-            ..r
-        },
-    ];
     let on_screen = |c: &Rect| {
         c.x >= bounds.x
             && c.y >= bounds.y
             && c.x + c.width <= bounds.x + bounds.width
             && c.y + c.height <= bounds.y + bounds.height
     };
-    candidates
-        .into_iter()
-        .find(|c| on_screen(c) && !overlaps(*c, obstacle))
+    let xs: Vec<f64> = std::iter::once(r.x)
+        .chain(
+            obstacles
+                .iter()
+                .flat_map(|o| [o.x - r.width - gap, o.x + o.width + gap]),
+        )
+        .collect();
+    let ys: Vec<f64> = std::iter::once(r.y)
+        .chain(
+            obstacles
+                .iter()
+                .flat_map(|o| [o.y - r.height - gap, o.y + o.height + gap]),
+        )
+        .collect();
+    xs.iter()
+        .flat_map(|&x| ys.iter().map(move |&y| Rect { x, y, ..r }))
+        .filter(|c| on_screen(c) && clear(c))
+        .min_by(|a, b| {
+            let d = |c: &Rect| (c.x - r.x).hypot(c.y - r.y);
+            d(a).total_cmp(&d(b))
+        })
         .unwrap_or(r)
 }
 
@@ -226,15 +234,9 @@ fn search_menu(
         probe.width,
         probe.height,
     );
-    frame = step_aside(
-        step_aside(frame, draw_frame, gap, bounds),
-        main_frame,
-        gap,
-        bounds,
-    );
-    if let Some(palette) = palette {
-        frame = step_aside(frame, palette, gap, bounds);
-    }
+    let mut obstacles = vec![draw_frame, main_frame];
+    obstacles.extend(palette);
+    frame = step_aside(frame, &obstacles, gap, bounds);
     menu(
         &engines,
         Point {
@@ -286,7 +288,7 @@ pub fn layout(sel: Rect, bounds: Rect, s: f64, palette_open: bool, search_open: 
     let draw_frame = Rect::new(draw_at.x, draw_at.y, draw.width, draw.height);
     let main_frame = step_aside(
         Rect::new(main_at.x, main_at.y, main.width, main.height),
-        draw_frame,
+        &[draw_frame],
         gap,
         bounds,
     );
@@ -317,12 +319,7 @@ pub fn layout(sel: Rect, bounds: Rect, s: f64, palette_open: bool, search_open: 
             size.width,
             size.height,
         );
-        let frame = step_aside(
-            step_aside(frame, main_frame, gap, bounds),
-            draw_frame,
-            gap,
-            bounds,
-        );
+        let frame = step_aside(frame, &[main_frame, draw_frame], gap, bounds);
         bars.push(bar(
             &swatches,
             true,
@@ -533,5 +530,14 @@ mod tests {
                 Button::Engine(SearchEngine::TinEye)
             ]
         );
+    }
+
+    #[test]
+    fn the_bars_carry_the_new_buttons() {
+        assert_eq!(
+            DRAW_BAR[8..],
+            [Button::Color, Button::AutoHide, Button::Undo]
+        );
+        assert_eq!(MAIN_BAR[3], Button::CopyText);
     }
 }

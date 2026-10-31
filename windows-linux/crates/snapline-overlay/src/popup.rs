@@ -21,10 +21,25 @@ const GREY: Rgb = Rgb(0xB8, 0xB5, 0xC8);
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PopupState {
-    Uploading { progress: f64, file: String },
-    Done { link: String },
-    Failed { message: String },
-    Message { title: String, detail: String },
+    Uploading {
+        progress: f64,
+        file: String,
+    },
+    Done {
+        link: String,
+    },
+    Failed {
+        message: String,
+    },
+    Message {
+        title: String,
+        detail: String,
+    },
+    /// Something went wrong outside uploads (Copy Text): a red title and no buttons but Close.
+    Problem {
+        title: String,
+        detail: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -162,6 +177,7 @@ impl Popup {
             PopupState::Done { .. } => ("Uploaded. Link copied.", GREEN),
             PopupState::Failed { .. } => ("Upload failed", RED),
             PopupState::Message { title, .. } => (title, GREEN),
+            PopupState::Problem { title, .. } => (title, RED),
         }
     }
 
@@ -175,7 +191,9 @@ impl Popup {
             PopupState::Uploading { file, .. } => vec![shorten_middle(font, file, size, width)],
             PopupState::Done { link } => vec![shorten_middle(font, link, size, width)],
             PopupState::Failed { message } => wrap(font, message, size, width),
-            PopupState::Message { detail, .. } => wrap(font, detail, size, width),
+            PopupState::Message { detail, .. } | PopupState::Problem { detail, .. } => {
+                wrap(font, detail, size, width)
+            }
         }
     }
 
@@ -458,5 +476,16 @@ mod tests {
         })
         .size(&font, 1.0);
         assert!(long.height > short.height && (long.width - 340.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn problems_have_no_buttons_but_close() {
+        let font = TextFont::bundled();
+        let p = Popup::new(PopupState::Problem {
+            title: "Text not copied".into(),
+            detail: "No OCR.".into(),
+        });
+        let kinds: Vec<_> = p.buttons(&font, 1.0).iter().map(|(b, _)| *b).collect();
+        assert_eq!(kinds, [PopupButton::Close]);
     }
 }

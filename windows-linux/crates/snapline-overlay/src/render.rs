@@ -8,9 +8,13 @@ use crate::text::TextFont;
 use crate::toolbar::{Bar, Button};
 use snapline_core::selection_geometry::{self as geo, Handle, Point, Rect};
 use std::f64::consts::PI;
+use std::fmt::Write as _;
 use tiny_skia::{
-    FillRule, IntRect, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Stroke, Transform,
+    FillRule, IntRect, LineCap, LineJoin, Paint, PathBuilder, Pixmap, Stroke, StrokeDash, Transform,
 };
+
+/// The outline of a hide box the user clicked to show.
+const YELLOW: Rgb = Rgb(0xFF, 0xCC, 0x00);
 
 pub(crate) fn paint(c: Rgb, alpha: u8) -> Paint<'static> {
     let mut p = Paint::default();
@@ -292,7 +296,8 @@ fn draw_bars(out: &mut Pixmap, session: &Session, i: usize, bars: &[Bar]) {
                 session.font.draw(out, engine.title(), at, size, WHITE);
                 continue;
             }
-            let active = matches!(button, Button::Tool(t) if session.tool == Some(*t));
+            let active = matches!(button, Button::Tool(t) if session.tool == Some(*t))
+                || (*button == Button::AutoHide && session.auto_hide);
             icons::draw(
                 out,
                 *button,
@@ -350,12 +355,63 @@ fn draw_bars(out: &mut Pixmap, session: &Session, i: usize, bars: &[Bar]) {
     badge(out, &session.font, tip, at, false, INK, scale);
 }
 
+/// Auto-hide's boxes inside the selection: black when hidden, a dashed yellow outline when shown.
+fn draw_hide_boxes(out: &mut Pixmap, session: &Session, i: usize) {
+    let scale = session.overlays[i].ui_scale;
+    for (_, b) in session.visible_hide_boxes(i) {
+        if b.hidden {
+            fill_rect(out, b.rect, BLACK, 255);
+        } else if let Some(path) = sk_rect(grow(b.rect, -0.5 * scale)).map(PathBuilder::from_rect) {
+            // Shown on purpose: a dashed outline on screen only, so the user sees what is no longer covered.
+            // Half a line inside the box, so a 1-point line covers whole pixels.
+            let mut dashed = stroke(scale as f32, LineCap::Butt);
+            dashed.dash = StrokeDash::new(vec![(4.0 * scale) as f32, (3.0 * scale) as f32], 0.0);
+            out.stroke_path(
+                &path,
+                &paint(YELLOW, 255),
+                &dashed,
+                Transform::identity(),
+                None,
+            );
+        }
+    }
+}
+
+/// The size badge's text, with the auto-hide state: "500 × 300   ·   hiding 2".
+fn size_label(session: &Session, i: usize, sel: Rect) -> String {
+    let o = &session.overlays[i];
+    let mut label = format!(
+        "{} × {}",
+        sel.width.round() as i64,
+        sel.height.round() as i64
+    );
+    if session.auto_hide {
+        if o.scanning {
+            label.push_str("   ·   scanning…");
+        } else if let Some(note) = &o.scan_note {
+            label.push_str("   ·   ");
+            label.push_str(note);
+        } else {
+            let hidden = session
+                .visible_hide_boxes(i)
+                .iter()
+                .filter(|(_, b)| b.hidden)
+                .count();
+            if hidden > 0 {
+                let _ = write!(label, "   ·   hiding {hidden}");
+            }
+        }
+    }
+    label
+}
+
 /// Draws what monitor `i` shows during a capture into `out` (same size as that monitor's screen).
 pub fn render_screen(out: &mut Pixmap, session: &Session, i: usize) {
     let o = &session.overlays[i];
     let scale = o.ui_scale;
     out.data_mut().copy_from_slice(o.screen.data());
     let origin = Point::default();
+    draw_hide_boxes(out, session, i);
     for a in o.annotations.iter().chain(o.current.as_ref()) {
         draw_annotation(out, a, &session.font, origin);
     }
@@ -433,11 +489,7 @@ pub fn render_screen(out: &mut Pixmap, session: &Session, i: usize) {
             }
         }
     }
-    let label = format!(
-        "{} × {}",
-        sel.width.round() as i64,
-        sel.height.round() as i64
-    );
+    let label = size_label(session, i, sel);
     let at = Point {
         x: sel.x,
         y: (sel.y - 26.0 * scale).max(2.0 * scale),
@@ -717,5 +769,49 @@ mod tests {
             .filter(|&x| rgb(&out, x, row).0 > 200)
             .count();
         assert!(light > 5, "the label text should be drawn");
+    }
+
+    fn with_box(hidden: bool) -> Session {
+        let mut s = screen_session(1);
+        select(&mut s, Rect::new(100.0, 100.0, 150.0, 80.0));
+        s.begin_scan();
+        let b = crate::scan::HideBox {
+            rect: Rect::new(120.0, 120.0, 40.0, 12.0),
+            category: snapline_core::sensitive_text::SensitiveCategory::Payment,
+            hidden,
+        };
+        s.scan_done(0, Ok(vec![b]));
+        s
+    }
+
+    #[test]
+    fn hidden_boxes_are_black_and_shown_ones_are_outlined() {
+        assert_eq!(rgb(&rendered(&with_box(true), 0), 140, 126), (0, 0, 0));
+        let shown = rendered(&with_box(false), 0);
+        assert_eq!(
+            rgb(&shown, 140, 126),
+            (255, 255, 255),
+            "inside stays visible"
+        );
+        let (r, g, b) = rgb(&shown, 121, 120);
+        assert!(
+            r > 200 && g > 160 && b < 80,
+            "yellow dashed edge: {:?}",
+            (r, g, b)
+        );
+    }
+
+    // Review Focus 3.
+    #[test]
+    fn failed_scan_shows_in_the_badge() {
+        let mut s = screen_session(1);
+        select(&mut s, Rect::new(100.0, 100.0, 150.0, 80.0));
+        let plain = rendered(&s, 0);
+        s.begin_scan();
+        s.scan_done(0, Err("auto-hide unavailable".into()));
+        let noted = rendered(&s, 0);
+        // The badge sits above the selection and grows to the right with the note.
+        let differs = (180..400).any(|x| rgb(&plain, x, 86) != rgb(&noted, x, 86));
+        assert!(differs, "the note should widen the badge");
     }
 }
