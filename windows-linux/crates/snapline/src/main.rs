@@ -16,6 +16,7 @@ mod recognize;
 mod secrets;
 mod settings;
 mod share;
+mod shortcuts;
 mod upload_job;
 mod upload_settings;
 mod window;

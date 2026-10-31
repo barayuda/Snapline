@@ -6,6 +6,8 @@ use snapline_core::sensitive_text::SensitiveCategory;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+const PRINT_SCREEN: &str = "PrintScreen";
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TrayClick {
@@ -150,6 +152,29 @@ impl Settings {
         let temp = path.with_extension("toml.tmp");
         std::fs::write(&temp, text).map_err(|e| e.to_string())?;
         std::fs::rename(&temp, path).map_err(|e| e.to_string())
+    }
+
+    /// The recorded capture shortcut (everything but Print Screen), as the General tab shows it.
+    #[must_use]
+    pub fn capture_shortcut(&self) -> Option<&str> {
+        self.hotkeys
+            .iter()
+            .map(String::as_str)
+            .find(|n| *n != PRINT_SCREEN)
+    }
+
+    #[must_use]
+    pub fn uses_print_screen(&self) -> bool {
+        self.hotkeys.iter().any(|n| n == PRINT_SCREEN)
+    }
+
+    /// The `hotkeys` list from the General tab: Print Screen first when ticked, then the recorded shortcut.
+    pub fn set_shortcuts(&mut self, shortcut: Option<String>, print_screen: bool) {
+        self.hotkeys = print_screen
+            .then(|| PRINT_SCREEN.to_owned())
+            .into_iter()
+            .chain(shortcut)
+            .collect();
     }
 
     /// Loads the latest file, applies `change` and saves it. Both Snapline processes write this file,
@@ -434,5 +459,19 @@ mod tests {
         .unwrap();
         let s = Settings::load(&path).0;
         assert_eq!((s.editor, s.downscale), ("C:/Tools/edit.exe".into(), true));
+    }
+
+    // Review Focus 1.
+    #[test]
+    fn the_shortcut_list_round_trips_through_the_tab() {
+        let mut s = Settings::default();
+        assert_eq!(
+            (s.capture_shortcut(), s.uses_print_screen()),
+            (Some("Ctrl+Shift+Digit1"), true)
+        );
+        s.set_shortcuts(Some("Ctrl+Alt+S".into()), false);
+        assert_eq!(s.hotkeys, ["Ctrl+Alt+S"]);
+        s.set_shortcuts(None, true);
+        assert_eq!(s.hotkeys, ["PrintScreen"]);
     }
 }

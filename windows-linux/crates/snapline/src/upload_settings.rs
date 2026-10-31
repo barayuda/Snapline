@@ -1,9 +1,9 @@
-//! The settings window, with the Upload and Auto-hide tabs of Preferences (brought forward; Phase 5 adds the
-//! rest). It runs as a second process, `snapline --settings`, and shares `settings.toml` and Credential Manager
-//! with the tray app.
+//! The settings window: the General, Upload and Auto-hide tabs of the macOS Preferences. It runs as a second
+//! process, `snapline --settings`, shares `settings.toml` and Credential Manager with the tray app, and tells the
+//! tray app when a setting it holds (shortcuts, tray click) changes.
 
 use crate::secrets::{self, Secret, SecretStore};
-use crate::settings::{AutoHide, Settings, UploadTarget};
+use crate::settings::{AutoHide, Settings, TrayClick, UploadTarget};
 use std::path::Path;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -121,12 +121,20 @@ const RED: eframe::egui::Color32 = eframe::egui::Color32::from_rgb(0xFF, 0x3B, 0
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tab {
+    General,
     Upload,
     AutoHide,
 }
 
 struct SettingsApp {
     tab: Tab,
+    /// The settings as last saved, for the General tab.
+    settings: Settings,
+    /// Waiting for the keys of a new capture shortcut.
+    recording: bool,
+    /// Why the last General change did not work.
+    general_error: Option<String>,
+    launch_at_login: bool,
     form: UploadForm,
     path: std::path::PathBuf,
     store: Keyring,
@@ -166,7 +174,11 @@ pub fn run_window() {
         ..Default::default()
     };
     let app = SettingsApp {
-        tab: Tab::Upload,
+        tab: Tab::General,
+        settings,
+        recording: false,
+        general_error: None,
+        launch_at_login: crate::platform::launch_at_login(),
         form,
         path,
         store,
@@ -422,6 +434,154 @@ impl SettingsApp {
     }
 }
 
+impl SettingsApp {
+    /// Saves a General change at once and tells the tray app, as macOS applies Preferences at once.
+    fn save_general(&mut self, change: impl FnOnce(&mut Settings)) {
+        match Settings::update(&self.path, change) {
+            Ok(saved) => {
+                self.settings = saved;
+                self.general_error = None;
+                crate::platform::announce_settings_changed();
+            }
+            Err(e) => self.general_error = Some(e),
+        }
+    }
+
+    /// While recording: the next key with Ctrl, Alt or an F-key becomes the capture shortcut; Esc cancels.
+    fn record_shortcut(&mut self, ui: &eframe::egui::Ui) {
+        let pressed = ui.input(|i| {
+            i.events.iter().find_map(|e| match e {
+                eframe::egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } => Some((*key, *modifiers)),
+                _ => None,
+            })
+        });
+        let Some((key, m)) = pressed else { return };
+        self.recording = false;
+        if key == eframe::egui::Key::Escape {
+            return;
+        }
+        let Some(name) = crate::shortcuts::from_keys(m, key.name()) else {
+            self.general_error = Some("Use Ctrl or Alt with a key, or an F-key on its own.".into());
+            return;
+        };
+        if !crate::shortcuts::is_free(&name, &self.settings.hotkeys) {
+            self.general_error = Some("That shortcut is used by another app.".into());
+            return;
+        }
+        let print_screen = self.settings.uses_print_screen();
+        self.save_general(|s| s.set_shortcuts(Some(name), print_screen));
+    }
+
+    fn general_tab(&mut self, ui: &mut eframe::egui::Ui) {
+        if self.recording {
+            self.record_shortcut(ui);
+        }
+        eframe::egui::Grid::new("general")
+            .num_columns(2)
+            .spacing([12.0, 10.0])
+            .show(ui, |ui| {
+                ui.label("Capture shortcut");
+                ui.horizontal(|ui| {
+                    let label = if self.recording {
+                        "Type a shortcut…".to_owned()
+                    } else {
+                        self.settings
+                            .capture_shortcut()
+                            .map_or("None".to_owned(), crate::settings::shortcut_label)
+                    };
+                    ui.label(eframe::egui::RichText::new(label).strong());
+                    if ui
+                        .button(if self.recording { "Cancel" } else { "Record" })
+                        .clicked()
+                    {
+                        self.recording = !self.recording;
+                        self.general_error = None;
+                    }
+                });
+                ui.end_row();
+
+                ui.label("");
+                let mut print_screen = self.settings.uses_print_screen();
+                if ui.checkbox(&mut print_screen, "Also use PrtScn").changed() {
+                    let shortcut = self.settings.capture_shortcut().map(str::to_owned);
+                    self.save_general(|s| s.set_shortcuts(shortcut, print_screen));
+                }
+                ui.end_row();
+
+                ui.label("Clicking the tray icon");
+                let mut click = self.settings.tray_click;
+                ui.horizontal(|ui| {
+                    ui.radio_value(&mut click, TrayClick::Menu, "Opens the menu");
+                    ui.radio_value(&mut click, TrayClick::Capture, "Takes a screenshot");
+                });
+                if click != self.settings.tray_click {
+                    self.save_general(|s| s.tray_click = click);
+                }
+                ui.end_row();
+
+                ui.label("Save screenshots to");
+                ui.horizontal(|ui| {
+                    ui.label(self.settings.save_directory.display().to_string());
+                    if ui.button("Choose…").clicked()
+                        && let Some(dir) = rfd::FileDialog::new()
+                            .set_directory(&self.settings.save_directory)
+                            .pick_folder()
+                    {
+                        self.save_general(|s| s.save_directory = dir);
+                    }
+                });
+                ui.end_row();
+
+                ui.label("Edit with");
+                ui.horizontal(|ui| {
+                    let editor = crate::actions::editor_to_use(&self.settings);
+                    let name = editor
+                        .as_ref()
+                        .and_then(|p| p.file_stem())
+                        .map_or("Paint (default)".to_owned(), |n| {
+                            n.to_string_lossy().into_owned()
+                        });
+                    ui.label(name);
+                    if ui.button("Choose…").clicked()
+                        && let Some(app) = rfd::FileDialog::new()
+                            .add_filter("App", &["exe"])
+                            .pick_file()
+                    {
+                        self.save_general(|s| s.editor = app);
+                    }
+                    if editor.is_some() && ui.button("Use default").clicked() {
+                        self.save_general(|s| s.editor = std::path::PathBuf::new());
+                    }
+                });
+                ui.end_row();
+            });
+        ui.add_space(6.0);
+        let mut downscale = self.settings.downscale;
+        if ui
+            .checkbox(&mut downscale, "Save at 100 % size on high-DPI screens")
+            .changed()
+        {
+            self.save_general(|s| s.downscale = downscale);
+        }
+        let mut launch = self.launch_at_login;
+        if ui.checkbox(&mut launch, "Launch at sign-in").changed() {
+            match crate::platform::set_launch_at_login(launch) {
+                Ok(()) => self.general_error = None,
+                Err(e) => self.general_error = Some(e),
+            }
+            self.launch_at_login = crate::platform::launch_at_login();
+        }
+        if let Some(e) = &self.general_error {
+            ui.colored_label(RED, e);
+        }
+    }
+}
+
 fn field(ui: &mut eframe::egui::Ui, label: &str, value: &mut String, hint: &str, secret: bool) {
     ui.label(label);
     ui.add(
@@ -441,11 +601,13 @@ impl eframe::App for SettingsApp {
     fn ui(&mut self, ui: &mut eframe::egui::Ui, _frame: &mut eframe::Frame) {
         eframe::egui::CentralPanel::default().show(ui, |ui| {
             ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.tab, Tab::General, "General");
                 ui.selectable_value(&mut self.tab, Tab::Upload, "Upload");
                 ui.selectable_value(&mut self.tab, Tab::AutoHide, "Auto-hide");
             });
             ui.separator();
             match self.tab {
+                Tab::General => self.general_tab(ui),
                 Tab::Upload => self.upload_tab(ui),
                 Tab::AutoHide => self.auto_hide_tab(ui),
             }

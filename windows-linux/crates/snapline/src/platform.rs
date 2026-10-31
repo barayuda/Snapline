@@ -158,6 +158,145 @@ pub fn reveal(file: &std::path::Path) {
     }
 }
 
+/// The value Snapline writes under `HKCU\…\Run`: the exe's path in quotes, as Windows wants for paths with spaces.
+#[must_use]
+#[cfg_attr(
+    not(windows),
+    allow(dead_code, reason = "used by launch at sign-in on Windows")
+)]
+pub fn run_value(exe: &std::path::Path) -> String {
+    format!("\"{}\"", exe.display())
+}
+
+/// Whether Windows starts this Snapline at sign-in (it may have been turned off in Task Manager).
+#[must_use]
+pub fn launch_at_login() -> bool {
+    #[cfg(windows)]
+    {
+        let Ok(exe) = std::env::current_exe() else {
+            return false;
+        };
+        run_key::get().is_some_and(|v| v.eq_ignore_ascii_case(&run_value(&exe)))
+    }
+    #[cfg(not(windows))]
+    false
+}
+
+/// Turns starting at sign-in on or off.
+///
+/// # Errors
+/// When Windows refuses the change; the error is for the user.
+pub fn set_launch_at_login(on: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        if on {
+            let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+            run_key::set(&run_value(&exe))
+        } else {
+            run_key::delete()
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = on;
+        Err("Launch at sign-in is only available on Windows for now.".into())
+    }
+}
+
+/// The value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` that starts Snapline at sign-in.
+#[cfg(windows)]
+mod run_key {
+    use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
+    use windows_sys::Win32::System::Registry::{
+        HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW,
+    };
+
+    const KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+    const NAME: &str = "Snapline";
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(Some(0)).collect()
+    }
+
+    pub fn get() -> Option<String> {
+        let (key, name) = (wide(KEY), wide(NAME));
+        let mut buf = vec![0u16; 1024];
+        let mut bytes = u32::try_from(buf.len() * 2).unwrap_or(u32::MAX);
+        // SAFETY: the strings are NUL-terminated; `buf` holds `bytes` bytes; all live across the call.
+        let status = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                key.as_ptr(),
+                name.as_ptr(),
+                RRF_RT_REG_SZ,
+                std::ptr::null_mut(),
+                buf.as_mut_ptr().cast(),
+                &raw mut bytes,
+            )
+        };
+        // `bytes` counts the closing NUL too.
+        (status == ERROR_SUCCESS)
+            .then(|| String::from_utf16_lossy(&buf[..(bytes as usize / 2).saturating_sub(1)]))
+    }
+
+    pub fn set(value: &str) -> Result<(), String> {
+        let (key, name, data) = (wide(KEY), wide(NAME), wide(value));
+        let bytes = u32::try_from(data.len() * 2).map_err(|e| e.to_string())?;
+        // SAFETY: the strings are NUL-terminated and live across the call; `data` is `bytes` bytes long.
+        let status = unsafe {
+            RegSetKeyValueW(
+                HKEY_CURRENT_USER,
+                key.as_ptr(),
+                name.as_ptr(),
+                REG_SZ,
+                data.as_ptr().cast(),
+                bytes,
+            )
+        };
+        if status == ERROR_SUCCESS {
+            Ok(())
+        } else {
+            Err(format!("Windows did not allow it (error {status})."))
+        }
+    }
+
+    pub fn delete() -> Result<(), String> {
+        let (key, name) = (wide(KEY), wide(NAME));
+        // SAFETY: the strings are NUL-terminated and live across the call.
+        let status = unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr()) };
+        if status == ERROR_SUCCESS || status == ERROR_FILE_NOT_FOUND {
+            Ok(())
+        } else {
+            Err(format!("Windows did not allow it (error {status})."))
+        }
+    }
+}
+
+/// The named event the settings window sets after saving, so the tray app reloads its settings.
+#[cfg_attr(
+    not(windows),
+    allow(dead_code, reason = "the tray app waits on it on Windows")
+)]
+pub const SETTINGS_CHANGED: &str = "Local\\dev.barayuda.snapline.settings-changed";
+
+/// Tells the tray app that `settings.toml` changed. Nothing happens when the tray app is not running.
+pub fn announce_settings_changed() {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::{EVENT_MODIFY_STATE, OpenEventW, SetEvent};
+        let name: Vec<u16> = SETTINGS_CHANGED.encode_utf16().chain(Some(0)).collect();
+        // SAFETY: `name` is NUL-terminated; the handle is closed after use.
+        unsafe {
+            let event = OpenEventW(EVENT_MODIFY_STATE, 0, name.as_ptr());
+            if !event.is_null() {
+                SetEvent(event);
+                CloseHandle(event);
+            }
+        }
+    }
+}
+
 /// Opens the settings window: this program again, as a second process.
 pub fn open_settings() {
     match std::env::current_exe() {
@@ -197,3 +336,18 @@ pub fn never_activate(window: &winit::window::Window) {
 
 #[cfg(not(windows))]
 pub fn never_activate(_window: &winit::window::Window) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_run_value_quotes_the_path() {
+        assert_eq!(
+            run_value(std::path::Path::new(
+                r"C:\Program Files\Snapline\snapline.exe"
+            )),
+            r#""C:\Program Files\Snapline\snapline.exe""#
+        );
+    }
+}
