@@ -22,6 +22,8 @@ app, and Preferences. The macOS app stays in Swift and keeps working as it does 
 | Drawing colours | A built-in palette of 8 colours | Works the same on Windows and Linux, like Lightshot. Barayuda, 29 Oct 2026 |
 | Upload settings before Preferences | An upload settings window in Phase 3 (the Upload tab first), run as a second process | People need somewhere to put keys before Phase 5. Barayuda, 30 Oct 2026 |
 | Search similar and confirmations | In Phase 3, with uploads | Search is an upload plus a link; confirmations share the upload popup. Barayuda, 30 Oct 2026 |
+| Symbol repair deferred | Copy Text copies the OCR text in reading order; `SymbolRepair` and the "check the copied text" popup wait | Windows apps rarely show ⌘ ⇧ ⌥ symbols. Barayuda, 31 Oct 2026 |
+| Auto-hide settings | An Auto-hide tab in the settings window, which becomes "Snapline settings" (Upload and Auto-hide tabs) | Choosing what to hide should not wait for Phase 5. Barayuda, 31 Oct 2026 |
 
 ## Repo layout
 
@@ -56,7 +58,7 @@ site/                      website
 | Save panel | `rfd` | same |
 | Launch at login | `HKCU\...\Run` registry value | XDG autostart file |
 | Settings (UserDefaults) | TOML file in `%APPDATA%\Snapline\` (`serde`, `toml`) | `~/.config/snapline/` |
-| Preferences (SwiftUI) | an `egui` window as a second process; its Upload tab arrives in Phase 3 | same |
+| Preferences (SwiftUI) | an `egui` window as a second process; its Upload tab arrives in Phase 3, Auto-hide in Phase 4 | same |
 
 Crate versions are not pinned here. Add each with `cargo add` so the latest stable release is used, and check for
 updates with `cargo outdated` at the start of each phase.
@@ -74,8 +76,9 @@ Each phase ends with something that works on its own and has its own plan in `do
 3. **Uploads.** S3 and Google Drive, credentials in Credential Manager, the upload popup with link, progress and errors,
    search similar images, confirmations, and the upload settings window. Plan:
    [docs/plans/2026-10-30-windows-uploads.md](plans/2026-10-30-windows-uploads.md).
-4. **Text recognition.** Windows OCR, auto-hide with click-to-reveal, Copy Text with reading order and the review
-   popup, face detection, `SymbolRepair` ported and its thresholds retuned for Windows OCR.
+4. **Text recognition.** Windows OCR, auto-hide with click-to-reveal, Copy Text with reading order, face detection,
+   and the Auto-hide tab. `SymbolRepair` and the review popup moved out of this phase (see Decisions). Plan:
+   [docs/plans/2026-10-31-windows-text-recognition.md](plans/2026-10-31-windows-text-recognition.md).
 5. **Everything else, and shipping.** Search similar, email, print, edit in another app, Preferences window, launch at
    login, installer, code signing, website and privacy policy updated for Windows.
 6. **Linux X11**, then **Linux Wayland** (portals, Flatpak).
@@ -89,6 +92,8 @@ Each phase ends with something that works on its own and has its own plan in `do
   `fancy-regex` for those rules only.
 - **OCR quality.** Windows OCR and Tesseract misread different characters than Vision. Auto-hide needs its own test
   images per engine, and on Linux it will miss more.
+- **OCR languages.** Windows OCR has no Indonesian. Snapline falls back to English OCR, which reads Latin text and
+  digits.
 - **Multiple monitors with different scaling.** Needs per-monitor DPI awareness from the first Windows build.
 - **PrtScn on Windows 11.** Windows may give PrtScn to the Snipping Tool. Snapline then keeps Ctrl+Shift+1 and
   explains how to free PrtScn.

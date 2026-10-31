@@ -72,7 +72,7 @@ entries from the list with **−**, allow the new one, and from then on rebuilds
 ## Windows (preview)
 
 The Windows version is in progress (see [docs/windows-linux.md](docs/windows-linux.md)). It can capture, select,
-draw, copy, save and upload; auto-hide and Copy Text come later.
+draw, copy, save, upload, hide sensitive data and copy text; keyboard-symbol repair in Copy Text comes later.
 
 To try it: open the latest successful **windows-linux** run under Actions, download **snapline-windows**, unzip and
 run `snapline.exe`. It is not signed yet, so Windows SmartScreen asks first (More info → Run anyway).
@@ -81,9 +81,14 @@ run `snapline.exe`. It is not signed yet, so Windows SmartScreen asks first (Mor
   turn off Settings → Accessibility → Keyboard → "Use the Print screen key to open screen capture" and restart
   Snapline.
 - In the capture: the same keys as on macOS with Ctrl for ⌘. Ctrl+Shift+S is Save As.
-- Upload: Ctrl+D or the Upload button. Set the bucket or Google Drive in the tray menu → **Upload Settings…** (the same
+- Upload: Ctrl+D or the Upload button. Set the bucket or Google Drive in the tray menu → **Settings…** → Upload (the same
   fields as on macOS; keys are kept in Windows Credential Manager). The link is copied when the upload finishes.
 - Search similar images: the magnifier button, then Google Lens or TinEye.
+- Auto-hide: every capture is read on your PC, and card numbers, keys, passwords, phone numbers, emails and faces
+  get black boxes before you copy, save or upload. Click a box to show it again; the eye button turns auto-hide off
+  for this capture. Choose what to hide in the tray menu → **Settings…** → Auto-hide.
+- Copy Text: Ctrl+Shift+C or the text button. Needs a Windows language with text recognition (Settings → Time &
+  language → Language & region).
 - Settings: `%APPDATA%\Snapline\settings.toml` (`save_directory`, `hotkeys`, `tray_click = "menu"` or `"capture"`).
 
 To build it: `cd windows-linux && cargo run -p snapline` (it also runs on macOS, for trying the overlay).
