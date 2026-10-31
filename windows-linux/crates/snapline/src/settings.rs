@@ -51,10 +51,6 @@ impl Default for AutoHide {
 impl AutoHide {
     /// The categories to hide on every capture (none when auto-hide is off).
     #[must_use]
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the capture scan uses it from Task 6")
-    )]
     pub fn categories(self) -> Vec<SensitiveCategory> {
         if !self.enabled {
             return Vec::new();

@@ -79,6 +79,19 @@ pub fn save(png: &[u8], dir: &Path, name: &str) -> std::io::Result<PathBuf> {
     Ok(path)
 }
 
+/// The confirmation after Copy Text: "2 lines: first line…" (at most 80 characters of the text).
+#[must_use]
+pub fn text_copied_detail(text: &str) -> String {
+    let lines = text.lines().filter(|l| !l.trim().is_empty()).count();
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut shown: String = flat.chars().take(80).collect();
+    if flat.chars().count() > 80 {
+        shown.push('…');
+    }
+    let noun = if lines == 1 { "line" } else { "lines" };
+    format!("{lines} {noun}: {shown}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,5 +121,16 @@ mod tests {
         };
         assert!(path.exists() && path.starts_with(&dir));
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn text_copied_detail_counts_lines_and_shortens() {
+        assert_eq!(text_copied_detail("Hello"), "1 line: Hello");
+        let long = format!("{}\nsecond", "x".repeat(100));
+        let detail = text_copied_detail(&long);
+        assert!(
+            detail.starts_with("2 lines: ") && detail.chars().count() <= "2 lines: ".len() + 81,
+            "{detail}"
+        );
     }
 }

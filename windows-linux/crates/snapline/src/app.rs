@@ -5,6 +5,7 @@ use crate::capture;
 use crate::icon::{self, TrayState};
 use crate::platform::{self, show_error};
 use crate::popup_window::PopupWindow;
+use crate::recognize;
 use crate::secrets::Keyring;
 use crate::settings::{self, Settings, TrayClick};
 use crate::upload_job::{self, CachedToken, Job, Outcome};
@@ -15,6 +16,7 @@ use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use snapline_core::naming;
 use snapline_overlay::input::{Key, Mods};
 use snapline_overlay::popup::{self, Popup, PopupButton, PopupState};
+use snapline_overlay::scan::{self, HideBox};
 use snapline_overlay::session::{Command, CursorKind, Effect, Redraw, Session};
 use snapline_overlay::text::TextFont;
 use snapline_overlay::{Point, Rect};
@@ -38,9 +40,19 @@ pub enum UserEvent {
     Tray(TrayIconEvent),
     UploadProgress(f64),
     UploadFinished(Outcome),
+    /// Auto-hide finished reading screen `screen` of capture `capture`: its boxes, or why it could not run.
+    ScanDone {
+        capture: u64,
+        screen: usize,
+        result: Result<Vec<HideBox>, String>,
+    },
+    /// Copy Text finished: the text (maybe empty), or a sentence saying why it could not run.
+    TextRead(Result<String, String>),
 }
 
 struct Capture {
+    /// Tells this capture's scan results from those of a capture already closed.
+    id: u64,
     session: Session,
     windows: Vec<OverlayWindow>,
     pointer: Vec<Point>,
@@ -72,6 +84,7 @@ pub struct App {
     last_job: Option<Job>,
     uploading: bool,
     google_token: Option<CachedToken>,
+    captures: u64,
 }
 
 impl App {
@@ -98,6 +111,7 @@ impl App {
             last_job: None,
             uploading: false,
             google_token: None,
+            captures: 0,
         }
     }
 
@@ -248,7 +262,9 @@ impl App {
             self.font.clone(),
         );
         let n = windows.len();
+        self.captures += 1;
         let mut cap = Capture {
+            id: self.captures,
             session,
             windows,
             pointer: vec![Point::default(); n],
@@ -262,6 +278,7 @@ impl App {
                     .position(|f| x >= f.x && x < f.x + f.width && y >= f.y && y < f.y + f.height)
             })
             .unwrap_or(0);
+        self.start_scan(&mut cap);
         for (k, w) in cap.windows.iter_mut().enumerate() {
             if let Err(e) = w.present(&cap.session, k) {
                 eprintln!("Snapline: {e}");
@@ -272,6 +289,68 @@ impl App {
         }
         cap.windows[cap.session.focused].window.focus_window();
         self.capture = Some(cap);
+    }
+
+    /// Reads every screen of `cap` on its own thread, so auto-hide can cover what it finds. The choices are read
+    /// from the file each time, so the settings window applies to the next capture.
+    fn start_scan(&self, cap: &mut Capture) {
+        let auto_hide =
+            Settings::path().map_or(self.settings.auto_hide, |p| Settings::load(&p).0.auto_hide);
+        let categories = auto_hide.categories();
+        if categories.is_empty() {
+            return;
+        }
+        cap.session.begin_scan();
+        for (screen, o) in cap.session.overlays.iter().enumerate() {
+            let (image, scale, categories) = (o.screen.clone(), o.ui_scale, categories.clone());
+            let (proxy, capture) = (self.proxy.clone(), cap.id);
+            std::thread::spawn(move || {
+                let faces =
+                    categories.contains(&snapline_core::sensitive_text::SensitiveCategory::Face);
+                let result = recognize::system()
+                    .recognize(&image, faces)
+                    .map(|found| scan::hide_boxes(&found, &categories, scale));
+                let _ = proxy.send_event(UserEvent::ScanDone {
+                    capture,
+                    screen,
+                    result,
+                });
+            });
+        }
+    }
+
+    /// Copy Text: reads the exported selection (so hidden areas stay hidden) on another thread.
+    fn read_text(&self, image: snapline_overlay::tiny_skia::Pixmap) {
+        let proxy = self.proxy.clone();
+        std::thread::spawn(move || {
+            let (w, h) = (f64::from(image.width()), f64::from(image.height()));
+            let result = recognize::system()
+                .recognize(&image, false)
+                .map(|found| scan::copy_text(&found, w, h));
+            let _ = proxy.send_event(UserEvent::TextRead(result));
+        });
+    }
+
+    fn text_read(&mut self, result: Result<String, String>, event_loop: &ActiveEventLoop) {
+        let (state, close_after) = match result {
+            Ok(text) if !text.trim().is_empty() => {
+                let text = text.trim_end();
+                copy_text(text);
+                let detail = actions::text_copied_detail(text);
+                let title = "Text copied".into();
+                (PopupState::Message { title, detail }, Some(2.5))
+            }
+            Ok(_) => {
+                let title = "No text found".into();
+                let detail = "Snapline could not read any text in the selection.".into();
+                (PopupState::Problem { title, detail }, Some(4.0))
+            }
+            Err(detail) => {
+                let title = "Text not copied".into();
+                (PopupState::Problem { title, detail }, None)
+            }
+        };
+        self.show_popup(event_loop, state, close_after);
     }
 
     fn apply(&mut self, event_loop: &ActiveEventLoop, i: usize, effect: Effect) {
@@ -319,6 +398,7 @@ impl App {
                     Err(e) => show_error(&format!("Snapline could not make the PNG: {e}")),
                 }
             }
+            Command::CopyText => self.read_text(image),
             _ => match actions::run(command, &image, &self.settings) {
                 Ok(Some(done)) => self.confirm(done, event_loop),
                 Ok(None) => {}
@@ -695,6 +775,23 @@ impl ApplicationHandler<UserEvent> for App {
                 }
             }
             UserEvent::UploadFinished(outcome) => self.finish_upload(outcome, event_loop),
+            UserEvent::ScanDone {
+                capture,
+                screen,
+                result,
+            } => {
+                let Some(cap) = self.capture.as_mut().filter(|c| c.id == capture) else {
+                    return; // that capture is closed
+                };
+                let result = result.map_err(|why| {
+                    eprintln!("Snapline: auto-hide could not run: {why}");
+                    recognize::UNAVAILABLE.to_owned()
+                });
+                let effect = cap.session.scan_done(screen, result);
+                let focused = cap.session.focused;
+                self.apply(event_loop, focused, effect);
+            }
+            UserEvent::TextRead(result) => self.text_read(result, event_loop),
             UserEvent::Menu(id) if id == self.why => {
                 if let Some(note) = &self.shortcut_note {
                     platform::show_info(note);
