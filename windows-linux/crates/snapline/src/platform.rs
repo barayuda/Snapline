@@ -102,6 +102,46 @@ pub fn work_area(_x: i32, _y: i32) -> Option<snapline_overlay::Rect> {
     None // the caller falls back to the monitor's full area
 }
 
+/// Runs a shell verb ("edit", "print", "open") on `file`, as Explorer's right-click menu does.
+///
+/// # Errors
+/// When Windows has no app for that verb, or it could not start.
+#[cfg(windows)]
+pub fn shell_verb(verb: &str, file: &std::path::Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    let wide = |s: &std::ffi::OsStr| s.encode_wide().chain(Some(0)).collect::<Vec<u16>>();
+    let (verb_w, file_w) = (wide(verb.as_ref()), wide(file.as_os_str()));
+    // SAFETY: both strings are NUL-terminated and outlive the call; the other pointers may be null.
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verb_w.as_ptr(),
+            file_w.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    // ShellExecute reports success as a value above 32, in a pointer-sized result.
+    let code = result.addr();
+    if code > 32 {
+        Ok(())
+    } else {
+        Err(format!("Windows could not {verb} the file (code {code})"))
+    }
+}
+
+/// Elsewhere only "open" works (for trying the app on a Mac or Linux).
+#[cfg(not(windows))]
+pub fn shell_verb(verb: &str, file: &std::path::Path) -> Result<(), String> {
+    match verb {
+        "open" | "edit" => open::that(file).map_err(|e| e.to_string()),
+        _ => Err(format!("\"{verb}\" is not available on this system yet")),
+    }
+}
+
 /// Opens the settings window: this program again, as a second process.
 pub fn open_settings() {
     match std::env::current_exe() {

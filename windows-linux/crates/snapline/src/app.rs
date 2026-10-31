@@ -403,10 +403,22 @@ impl App {
         if command != Command::Cancel && image.is_none() {
             return platform::beep(); // nothing selected: keep the capture open
         }
+        let scale = cap.session.export_scale();
         self.capture = None; // closes the overlay windows before any dialog opens
-        let Some(image) = image else {
+        let Some(mut image) = image else {
             return;
         };
+        // Re-read, so the settings window applies to the next action without a restart.
+        let settings =
+            Settings::path().map_or_else(|| self.settings.clone(), |p| Settings::load(&p).0);
+        // Save at 100 %: everything but Copy Text, which OCR reads better at full size.
+        if settings.downscale
+            && scale > 1.0
+            && command != Command::CopyText
+            && let Some(small) = snapline_overlay::render::downscale(&image, 1.0 / scale)
+        {
+            image = small;
+        }
         match command {
             Command::Upload | Command::Search(_) => {
                 let search = if let Command::Search(engine) = command {
@@ -427,7 +439,7 @@ impl App {
                 }
             }
             Command::CopyText => self.read_text(image),
-            _ => match actions::run(command, &image, &self.settings) {
+            _ => match actions::run(command, &image, &settings) {
                 Ok(Some(done)) => self.confirm(done, event_loop),
                 Ok(None) => {}
                 Err(e) => show_error(&e),

@@ -86,6 +86,10 @@ pub struct Settings {
     /// The Snapline folder in My Drive, once created.
     pub drive_folder_id: String,
     pub auto_hide: AutoHide,
+    /// The app Ctrl+E opens; empty means the Windows default (Paint).
+    pub editor: PathBuf,
+    /// Save at 100 % size on high-DPI screens (macOS: "Downscale Retina screens").
+    pub downscale: bool,
 }
 
 impl Default for Settings {
@@ -106,6 +110,8 @@ impl Default for Settings {
             google_email: String::new(),
             drive_folder_id: String::new(),
             auto_hide: AutoHide::default(),
+            editor: PathBuf::new(),
+            downscale: false,
         }
     }
 }
@@ -410,5 +416,23 @@ mod tests {
             saved.s3_bucket.starts_with("bucket-") && saved.google_email.starts_with("user-"),
             "{saved:?}"
         );
+    }
+
+    #[test]
+    fn editor_and_downscale_round_trip_and_default_off() {
+        let old = temp_file("old-file", "save_directory = \"/tmp\"\n");
+        let s = Settings::load(&old).0;
+        assert_eq!(
+            (s.editor.as_os_str().is_empty(), s.downscale),
+            (true, false)
+        );
+        let path = temp_file("editor", "");
+        Settings::update(&path, |s| {
+            s.editor = "C:/Tools/edit.exe".into();
+            s.downscale = true;
+        })
+        .unwrap();
+        let s = Settings::load(&path).0;
+        assert_eq!((s.editor, s.downscale), ("C:/Tools/edit.exe".into(), true));
     }
 }

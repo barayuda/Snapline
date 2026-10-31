@@ -1,5 +1,6 @@
 //! What happens to the finished screenshot: copy, save, save as.
 
+use crate::platform;
 use crate::settings::Settings;
 use chrono::Local;
 use snapline_core::naming;
@@ -51,15 +52,54 @@ pub fn run(command: Command, image: &Pixmap, settings: &Settings) -> Result<Opti
                 .map_err(|e| format!("Snapline could not save {}: {e}", path.display()))?;
             Ok(Some(Done::Saved(path)))
         }
-        // Uploads are handled by the app itself; Cancel has nothing to do.
+        Command::Edit => {
+            let file = temp_png(&png(image)?, &name)?;
+            edit(&file, settings)
+                .map_err(|e| format!("Snapline could not open the editor: {e}"))?;
+            Ok(None)
+        }
+        Command::Print => {
+            let file = temp_png(&png(image)?, &name)?;
+            platform::shell_verb("print", &file)
+                .map_err(|e| format!("Snapline could not print: {e}"))?;
+            Ok(None) // Windows shows its own print dialog
+        }
+        // Uploads, Share and Copy Text are handled by the app itself; Cancel has nothing to do.
         Command::Cancel
         | Command::Upload
         | Command::Search(_)
         | Command::CopyText
-        | Command::Edit
-        | Command::Share
-        | Command::Print => Ok(None),
+        | Command::Share => Ok(None),
     }
+}
+
+/// Writes `png` to the Snapline temp folder for another app to open; Windows cleans the temp folder up.
+pub fn temp_png(png: &[u8], name: &str) -> Result<PathBuf, String> {
+    let dir = std::env::temp_dir().join("Snapline");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Snapline could not write a temporary file: {e}"))?;
+    let path = dir.join(name);
+    std::fs::write(&path, png)
+        .map_err(|e| format!("Snapline could not write a temporary file: {e}"))?;
+    Ok(path)
+}
+
+/// The editor chosen in Settings, if it still exists; `None` means the Windows default.
+#[must_use]
+pub fn editor_to_use(settings: &Settings) -> Option<PathBuf> {
+    Some(settings.editor.clone()).filter(|p| !p.as_os_str().is_empty() && p.is_file())
+}
+
+/// Opens `file` in the chosen editor, or the default one: the `edit` verb (Paint), or `open` when PNG has none.
+fn edit(file: &Path, settings: &Settings) -> Result<(), String> {
+    if let Some(editor) = editor_to_use(settings) {
+        return std::process::Command::new(editor)
+            .arg(file)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string());
+    }
+    platform::shell_verb("edit", file).or_else(|_| platform::shell_verb("open", file))
 }
 
 fn png(image: &Pixmap) -> Result<Vec<u8>, String> {
@@ -138,5 +178,33 @@ mod tests {
             detail.starts_with("2 lines: ") && detail.chars().count() <= "2 lines: ".len() + 81,
             "{detail}"
         );
+    }
+
+    #[test]
+    fn temp_png_writes_into_the_snapline_temp_folder() {
+        let path = temp_png(b"png bytes", "Snapline test.png").unwrap();
+        assert!(path.starts_with(std::env::temp_dir().join("Snapline")));
+        assert_eq!(std::fs::read(&path).unwrap(), b"png bytes");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn a_missing_editor_falls_back_to_the_default() {
+        let settings = Settings {
+            editor: "/no/such/editor.exe".into(),
+            ..Settings::default()
+        };
+        assert_eq!(
+            editor_to_use(&settings),
+            None,
+            "a missing editor means the default"
+        );
+        let here = std::env::current_exe().unwrap();
+        let settings = Settings {
+            editor: here.clone(),
+            ..Settings::default()
+        };
+        assert_eq!(editor_to_use(&settings), Some(here));
+        assert_eq!(editor_to_use(&Settings::default()), None);
     }
 }
