@@ -114,6 +114,13 @@ jobs:
           # Review finding: SHA256SUMS.txt must have Unix line endings, or `sha256sum -c` fails on Mac and Linux.
           if ([IO.File]::ReadAllBytes("$PWD\target\dist\SHA256SUMS.txt") -contains 13) { throw "SHA256SUMS.txt has CR line endings" }
           "install, upgrade over a running Snapline, sign-in entries, uninstall, checksums: ok"
+      - name: Package a pre-release version
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./installer/package.ps1 -Version 0.1.0-beta.1 -Out target\dist-pre
+          if (-not (Test-Path target\dist-pre\Snapline-Setup-0.1.0-beta.1.exe)) { throw "no pre-release installer" }
+          "pre-release packaging: ok"
       - uses: actions/upload-artifact@v7
         if: runner.os == 'Windows'
         with:
