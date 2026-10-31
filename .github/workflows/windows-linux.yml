@@ -1,0 +1,48 @@
+name: windows-linux
+
+on:
+  push:
+    paths: ["windows-linux/**", "fixtures/**", ".github/workflows/windows-linux.yml"]
+  pull_request:
+    paths: ["windows-linux/**", "fixtures/**", ".github/workflows/windows-linux.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: windows-linux
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install   # the toolchain named in rust-toolchain.toml
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: windows-linux
+      - run: cargo fmt --check
+      # The app is Windows-only until Phase 6; Linux checks the shared crates.
+      - name: Lint and test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cargo clippy --workspace --exclude snapline --all-targets -- -D warnings
+          cargo test --workspace --exclude snapline
+      - name: Lint and test (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+      - name: Build snapline.exe
+        if: runner.os == 'Windows'
+        run: cargo build --release -p snapline
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'Windows'
+        with:
+          name: snapline-windows
+          path: windows-linux/target/release/snapline.exe
+          if-no-files-found: error

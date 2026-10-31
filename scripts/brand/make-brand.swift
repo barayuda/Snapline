@@ -5,7 +5,7 @@
 import AppKit
 import CoreText
 
-// MARK: - Palette (keep in sync with Sources/Snapline/Brand.swift)
+// MARK: - Palette (keep in sync with macOS/Sources/Snapline/Brand.swift)
 
 func rgb(_ hex: UInt32, _ a: CGFloat = 1) -> CGColor {
     CGColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,

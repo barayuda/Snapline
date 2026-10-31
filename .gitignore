@@ -1,6 +1,7 @@
 .build/
-/build/
+/macOS/build/
 *.xcodeproj
 .swiftpm/
 .DS_Store
 .netlify/
+/windows-linux/target/

@@ -1,0 +1,22 @@
+[package]
+name = "snapline-core"
+version = "0.1.0"
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64 = "0.23.1"
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
+fancy-regex = "0.20.0"
+hmac = "0.13.0"
+percent-encoding = "2.3.2"
+rand = "0.10.3"
+regex = "1.13.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+url = "2.5.8"
+
+[lints]
+workspace = true

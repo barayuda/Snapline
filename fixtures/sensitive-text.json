@@ -1,0 +1,647 @@
+{
+  "about": "Sensitive-text cases shared by the Swift and Rust tests. text and each hidden entry are pieces joined with no separator, so fake secrets can stay split. categories defaults to all.",
+  "cases": [
+    {
+      "name": "email",
+      "text": [
+        "Contact: jane.doe+test@example.co.id today"
+      ],
+      "hidden": [
+        [
+          "jane.doe+test@example.co.id"
+        ]
+      ]
+    },
+    {
+      "name": "phone +62 812-3456-7890",
+      "text": [
+        "Call +62 812-3456-7890 now"
+      ],
+      "hidden": [
+        [
+          "+62 812-3456-7890"
+        ]
+      ]
+    },
+    {
+      "name": "phone (415) 555-0132",
+      "text": [
+        "Call (415) 555-0132 now"
+      ],
+      "hidden": [
+        [
+          "(415) 555-0132"
+        ]
+      ]
+    },
+    {
+      "name": "card: 16 digits in groups of 4",
+      "text": [
+        "Card 4242 4242 4242 4242 exp 12/30"
+      ],
+      "categories": [
+        "payment"
+      ],
+      "hidden": [
+        [
+          "4242 4242 4242 4242"
+        ]
+      ]
+    },
+    {
+      "name": "card: 13 digits, the shortest card length",
+      "text": [
+        "Card 4222222222222 exp 12/30"
+      ],
+      "categories": [
+        "payment"
+      ],
+      "hidden": [
+        [
+          "4222222222222"
+        ]
+      ]
+    },
+    {
+      "name": "card: American Express grouping 4-6-5",
+      "text": [
+        "Card 3782 822463 10005 exp 12/30"
+      ],
+      "categories": [
+        "payment"
+      ],
+      "hidden": [
+        [
+          "3782 822463 10005"
+        ]
+      ]
+    },
+    {
+      "name": "card: 19 digits, the longest card length",
+      "text": [
+        "Card 4000000000000000006 exp 12/30"
+      ],
+      "categories": [
+        "payment"
+      ],
+      "hidden": [
+        [
+          "4000000000000000006"
+        ]
+      ]
+    },
+    {
+      "name": "card: card with dashes",
+      "text": [
+        "Card 4242-4242-4242-4242 exp 12/30"
+      ],
+      "categories": [
+        "payment"
+      ],
+      "hidden": [
+        [
+          "4242-4242-4242-4242"
+        ]
+      ]
+    },
+    {
+      "name": "not a card: fails the Luhn check",
+      "text": [
+        "Number 4242-4242-4242-4241 here"
+      ],
+      "categories": [
+        "payment"
+      ],
+      "hidden": []
+    },
+    {
+      "name": "not a card: 12 digits: too short for a card",
+      "text": [
+        "Number 400000000002 here"
+      ],
+      "categories": [
+        "payment"
+      ],
+      "hidden": []
+    },
+    {
+      "name": "not a card: 20 digits: too long",
+      "text": [
+        "Number 40000000000000000002 here"
+      ],
+      "categories": [
+        "payment"
+      ],
+      "hidden": []
+    },
+    {
+      "name": "IBAN with spaces",
+      "text": [
+        "IBAN GB82 WEST 1234 5698 7654 32 ok"
+      ],
+      "categories": [
+        "payment"
+      ],
+      "hidden": [
+        [
+          "GB82 WEST 1234 5698 7654 32"
+        ]
+      ]
+    },
+    {
+      "name": "capitalised word after an IBAN is trimmed off",
+      "text": [
+        "IBAN GB82 WEST 1234 5698 7654 32 OK"
+      ],
+      "categories": [
+        "payment"
+      ],
+      "hidden": [
+        [
+          "GB82 WEST 1234 5698 7654 32"
+        ]
+      ]
+    },
+    {
+      "name": "shortest IBAN (15 characters)",
+      "text": [
+        "IBAN NO93 8601 1117 947 paid"
+      ],
+      "categories": [
+        "payment"
+      ],
+      "hidden": [
+        [
+          "NO93 8601 1117 947"
+        ]
+      ]
+    },
+    {
+      "name": "31-character IBAN",
+      "text": [
+        "IBAN MT84 MALT 0110 0001 2345 MTLC AST0 01S"
+      ],
+      "categories": [
+        "payment"
+      ],
+      "hidden": [
+        [
+          "MT84 MALT 0110 0001 2345 MTLC AST0 01S"
+        ]
+      ]
+    },
+    {
+      "name": "IBAN without spaces",
+      "text": [
+        "IBAN DE89370400440532013000 sent"
+      ],
+      "categories": [
+        "payment"
+      ],
+      "hidden": [
+        [
+          "DE89370400440532013000"
+        ]
+      ]
+    },
+    {
+      "name": "IBAN needs a valid checksum",
+      "text": [
+        "IBAN GB83 WEST 1234 5698 7654 32"
+      ],
+      "categories": [
+        "payment"
+      ],
+      "hidden": []
+    },
+    {
+      "name": "token: AWS access key",
+      "text": [
+        "value: ",
+        "AKIAIOSFODNN7EXAMPLE",
+        " end"
+      ],
+      "hidden": [
+        [
+          "AKIAIOSFODNN7EXAMPLE"
+        ]
+      ]
+    },
+    {
+      "name": "token: Google API key",
+      "text": [
+        "value: ",
+        "AI",
+        "zaSyA-1234567890abcdefghijklmnopqrstu",
+        " end"
+      ],
+      "hidden": [
+        [
+          "AI",
+          "zaSyA-1234567890abcdefghijklmnopqrstu"
+        ]
+      ]
+    },
+    {
+      "name": "token: GitHub token",
+      "text": [
+        "value: ",
+        "gh",
+        "p_abcdefghijklmnopqrstuvwxyz0123456789",
+        " end"
+      ],
+      "hidden": [
+        [
+          "gh",
+          "p_abcdefghijklmnopqrstuvwxyz0123456789"
+        ]
+      ]
+    },
+    {
+      "name": "token: GitHub fine-grained token",
+      "text": [
+        "value: ",
+        "github",
+        "_pat_11ABCDEFG0123456789_abcdefghijklmnop",
+        " end"
+      ],
+      "hidden": [
+        [
+          "github",
+          "_pat_11ABCDEFG0123456789_abcdefghijklmnop"
+        ]
+      ]
+    },
+    {
+      "name": "token: Slack token",
+      "text": [
+        "value: ",
+        "xo",
+        "xb-123456789012-abcdefghijkl",
+        " end"
+      ],
+      "hidden": [
+        [
+          "xo",
+          "xb-123456789012-abcdefghijkl"
+        ]
+      ]
+    },
+    {
+      "name": "token: Stripe key",
+      "text": [
+        "value: ",
+        "sk",
+        "_live_51Habcdefghijklmnop",
+        " end"
+      ],
+      "hidden": [
+        [
+          "sk",
+          "_live_51Habcdefghijklmnop"
+        ]
+      ]
+    },
+    {
+      "name": "token: JWT",
+      "text": [
+        "value: ",
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+        " end"
+      ],
+      "hidden": [
+        [
+          "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+        ]
+      ]
+    },
+    {
+      "name": "token: private key header",
+      "text": [
+        "value: ",
+        "-----BEGIN RSA ",
+        "PRIVATE KEY-----",
+        " end"
+      ],
+      "hidden": [
+        [
+          "-----BEGIN RSA ",
+          "PRIVATE KEY-----"
+        ]
+      ]
+    },
+    {
+      "name": "secret runs to the end of the word when text recognition misreads a character",
+      "text": [
+        "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOilxMjMOInO.dozjgNryP4J3jVmNHIOW5N_XgLOn3|9PIFUPOTHsR8U next"
+      ],
+      "hidden": [
+        [
+          "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOilxMjMOInO.dozjgNryP4J3jVmNHIOW5N_XgLOn3|9PIFUPOTHsR8U"
+        ]
+      ]
+    },
+    {
+      "name": "bearer hides only the token",
+      "text": [
+        "Authorization: Bearer abcDEF123456ghiJKL789"
+      ],
+      "hidden": [
+        [
+          "abcDEF123456ghiJKL789"
+        ]
+      ]
+    },
+    {
+      "name": "key/value hides only the value: password=hunter22",
+      "text": [
+        "password=hunter22"
+      ],
+      "hidden": [
+        [
+          "hunter22"
+        ]
+      ]
+    },
+    {
+      "name": "key/value hides only the value: api_key: \"q8Zr2",
+      "text": [
+        "api_key: \"q8Zr2"
+      ],
+      "hidden": [
+        [
+          "q8Zr2"
+        ]
+      ]
+    },
+    {
+      "name": "key/value hides only the value: DB_PASSWORD = s3cr3t!",
+      "text": [
+        "DB_PASSWORD = s3cr3t!"
+      ],
+      "hidden": [
+        [
+          "s3cr3t!"
+        ]
+      ]
+    },
+    {
+      "name": "key/value hides only the value: AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE",
+      "text": [
+        "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE"
+      ],
+      "hidden": [
+        [
+          "AKIAIOSFODNN7EXAMPLE"
+        ]
+      ]
+    },
+    {
+      "name": "high-entropy string",
+      "text": [
+        "token Zx81kQ0pLm2Vb7Nc4Rt9Ws3Ey6Ua5Io1 here"
+      ],
+      "hidden": [
+        [
+          "Zx81kQ0pLm2Vb7Nc4Rt9Ws3Ey6Ua5Io1"
+        ]
+      ]
+    },
+    {
+      "name": "ordinary booking text",
+      "text": [
+        "Booking 2026-10-28 for 2 guests, room 1204, total IDR 1.250.000, order #48213, version 2.22"
+      ],
+      "hidden": []
+    },
+    {
+      "name": "long hyphenated word",
+      "text": [
+        "internationalization-localization-configuration"
+      ],
+      "hidden": []
+    },
+    {
+      "name": "date is not a phone",
+      "text": [
+        "Booked 2026-10-28 for 2 nights"
+      ],
+      "hidden": []
+    },
+    {
+      "name": "price is not a phone",
+      "text": [
+        "Total IDR 1.250.000 paid"
+      ],
+      "hidden": []
+    },
+    {
+      "name": "IP address is not a phone",
+      "text": [
+        "Server 192.168.100.200 is up"
+      ],
+      "hidden": []
+    },
+    {
+      "name": "version is not a phone",
+      "text": [
+        "Snapline 1.0.0 build 20261028"
+      ],
+      "hidden": []
+    },
+    {
+      "name": "local phone with dashes",
+      "text": [
+        "Call 021-555-1234 today"
+      ],
+      "hidden": [
+        [
+          "021-555-1234"
+        ]
+      ]
+    },
+    {
+      "name": "phone after accented text",
+      "text": [
+        "Café: +62 812-3456-7890"
+      ],
+      "hidden": [
+        [
+          "+62 812-3456-7890"
+        ]
+      ]
+    },
+    {
+      "name": "email after emoji",
+      "text": [
+        "📧 jane@example.com"
+      ],
+      "hidden": [
+        [
+          "jane@example.com"
+        ]
+      ]
+    },
+    {
+      "name": "day-first date is not a phone",
+      "text": [
+        "Due 28-10-2026 at noon"
+      ],
+      "hidden": []
+    },
+    {
+      "name": "phone with dots",
+      "text": [
+        "Call 415.555.0132 now"
+      ],
+      "hidden": [
+        [
+          "415.555.0132"
+        ]
+      ]
+    },
+    {
+      "name": "space-grouped number reads as a phone, as on macOS",
+      "text": [
+        "Population 12 345 678 people"
+      ],
+      "hidden": [
+        [
+          "12 345 678"
+        ]
+      ]
+    },
+    {
+      "name": "phone with country code and spaces",
+      "text": [
+        "Ring +1 415 555 0132 later"
+      ],
+      "hidden": [
+        [
+          "+1 415 555 0132"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: E.164 without spaces",
+      "text": [
+        "Call +14155550132 now"
+      ],
+      "hidden": [
+        [
+          "+14155550132"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: Indonesian mobile in E.164",
+      "text": [
+        "WA +6281234567890 ok"
+      ],
+      "hidden": [
+        [
+          "+6281234567890"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: country code then one long group",
+      "text": [
+        "Call +62 81234567890 now"
+      ],
+      "hidden": [
+        [
+          "+62 81234567890"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: Indonesian mobile without separators",
+      "text": [
+        "HP 081234567890 ok"
+      ],
+      "hidden": [
+        [
+          "081234567890"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: US number without separators",
+      "text": [
+        "Call 4155550132 now"
+      ],
+      "hidden": [
+        [
+          "4155550132"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: mobile with one dash",
+      "text": [
+        "HP 0812-34567890 ok"
+      ],
+      "hidden": [
+        [
+          "0812-34567890"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: Jakarta landline with one dash",
+      "text": [
+        "Tel 021-5551234 ok"
+      ],
+      "hidden": [
+        [
+          "021-5551234"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: Bali landline with one dash",
+      "text": [
+        "Tel 0361-754444 ok"
+      ],
+      "hidden": [
+        [
+          "0361-754444"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: area code in brackets, long group",
+      "text": [
+        "Tel (0361) 754444 ok"
+      ],
+      "hidden": [
+        [
+          "(0361) 754444"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: landline with a space",
+      "text": [
+        "Tel: 021 5551234"
+      ],
+      "hidden": [
+        [
+          "021 5551234"
+        ]
+      ]
+    },
+    {
+      "name": "phone that must be hidden: US number with extension",
+      "text": [
+        "Call 415-555-0132x123 today"
+      ],
+      "hidden": [
+        [
+          "415-555-0132x123"
+        ]
+      ]
+    }
+  ]
+}
