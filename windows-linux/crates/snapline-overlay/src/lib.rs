@@ -12,6 +12,7 @@ pub mod icons;
 pub mod input;
 pub mod popup;
 pub mod render;
+pub mod scan;
 pub mod session;
 pub mod text;
 pub mod toolbar;

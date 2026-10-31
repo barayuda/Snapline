@@ -5,6 +5,7 @@ use crate::annotation::{Annotation, Shape, Tool};
 use crate::color::{PALETTE, Rgb};
 use crate::input::{Key, Mods};
 use crate::render;
+use crate::scan::HideBox;
 use crate::text::TextFont;
 use crate::toolbar::{self, Bar, Button};
 use snapline_core::search::SearchEngine;
@@ -19,6 +20,7 @@ pub enum Command {
     Cancel,
     Upload,
     Search(SearchEngine),
+    CopyText,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,6 +90,8 @@ pub enum CursorKind {
     ResizeDiagonalDown,
     /// ↗↙
     ResizeDiagonalUp,
+    /// Over a hide box that a click would show or hide.
+    Pointer,
 }
 
 /// The text box being typed into.
@@ -106,6 +110,14 @@ enum Drag {
     Resizing(Handle, Rect),
     Drawing(Point),
     MovingText(usize, Point),
+}
+
+/// What `undo` takes back on one screen, newest last.
+#[derive(Clone, Copy, Debug)]
+enum Undo {
+    Annotation,
+    /// A click that showed or hid hide box `n`.
+    Toggle(usize),
 }
 
 /// What a mouse-down starts, decided before anything changes.
@@ -133,6 +145,13 @@ pub struct Overlay {
     pub pointer: Point,
     /// The toolbar button under the pointer.
     pub hover: Option<Button>,
+    /// What auto-hide found on this screen.
+    pub hide_boxes: Vec<HideBox>,
+    /// True while auto-hide is still reading this screen.
+    pub scanning: bool,
+    /// Why there are no boxes, when the scan could not run (shown in the size badge).
+    pub scan_note: Option<String>,
+    undo: Vec<Undo>,
     drag: Drag,
     down: Point,
     did_drag: bool,
@@ -149,6 +168,10 @@ impl Overlay {
             editing: None,
             pointer: Point::default(),
             hover: None,
+            hide_boxes: Vec::new(),
+            scanning: false,
+            scan_note: None,
+            undo: Vec::new(),
             drag: Drag::None,
             down: Point::default(),
             did_drag: false,
@@ -188,6 +211,10 @@ pub(crate) fn contains(r: Rect, p: Point) -> bool {
     p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height
 }
 
+fn intersects(a: Rect, b: Rect) -> bool {
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+}
+
 pub struct Session {
     pub overlays: Vec<Overlay>,
     pub tool: Option<Tool>,
@@ -201,6 +228,10 @@ pub struct Session {
     pub palette_open: bool,
     pub search_open: bool,
     pub font: TextFont,
+    /// Cover what auto-hide found (the eye button turns it off for this capture).
+    pub auto_hide: bool,
+    /// An exporting command waiting for the scan of the selected screen.
+    pending: Option<Command>,
 }
 
 impl Session {
@@ -220,6 +251,8 @@ impl Session {
             palette_open: false,
             search_open: false,
             font,
+            auto_hide: true,
+            pending: None,
         }
     }
 
@@ -236,17 +269,80 @@ impl Session {
     pub fn export(&mut self) -> Option<Pixmap> {
         self.commit_text();
         let i = self.selected()?;
+        // Hidden boxes go first, under the drawings, as on macOS.
+        let covers = self
+            .visible_hide_boxes(i)
+            .into_iter()
+            .filter(|(_, b)| b.hidden)
+            .map(|(_, b)| Annotation {
+                shape: Shape::Hide(b.rect),
+                color: crate::color::BLACK,
+                width: 0.0,
+                marker: false,
+            });
         let o = &self.overlays[i];
-        render::render_selection(&o.screen, o.selection?, &o.annotations, &self.font)
+        let all: Vec<Annotation> = covers.chain(o.annotations.iter().cloned()).collect();
+        render::render_selection(&o.screen, o.selection?, &all, &self.font)
     }
 
-    /// A command that needs a selection: beep without one.
-    pub(crate) fn request(&self, c: Command) -> Effect {
-        if self.selected().is_some() {
-            Effect::command(c)
-        } else {
-            Effect::beep()
+    /// A command that needs a selection: beep without one. Waits while the selected screen is being scanned.
+    pub(crate) fn request(&mut self, c: Command) -> Effect {
+        let Some(i) = self.selected() else {
+            return Effect::beep();
+        };
+        if self.auto_hide && self.overlays[i].scanning {
+            // Never export before auto-hide has found what to hide.
+            self.pending = Some(c);
+            return Effect::all();
         }
+        Effect::command(c)
+    }
+
+    /// Starts the auto-hide scan on every screen: exporting commands wait until it is done.
+    pub fn begin_scan(&mut self) {
+        for o in &mut self.overlays {
+            o.scanning = true;
+        }
+    }
+
+    /// The scan of screen `i` finished: its boxes, or why it could not run. Releases a held command once the
+    /// screen that holds the selection is done.
+    pub fn scan_done(&mut self, i: usize, result: Result<Vec<HideBox>, String>) -> Effect {
+        let o = &mut self.overlays[i];
+        o.scanning = false;
+        match result {
+            Ok(boxes) => o.hide_boxes = boxes,
+            Err(note) => o.scan_note = Some(note),
+        }
+        let ready = self.selected().is_none_or(|k| !self.overlays[k].scanning);
+        Effect {
+            command: if ready { self.pending.take() } else { None },
+            ..Effect::all()
+        }
+    }
+
+    /// The boxes inside the selection of screen `i`, with their index; none when auto-hide is off.
+    #[must_use]
+    pub fn visible_hide_boxes(&self, i: usize) -> Vec<(usize, HideBox)> {
+        let o = &self.overlays[i];
+        let Some(sel) = o.selection.filter(|_| self.auto_hide) else {
+            return Vec::new();
+        };
+        o.hide_boxes
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(_, b)| intersects(b.rect, sel))
+            .collect()
+    }
+
+    /// The topmost visible hide box under `p` on screen `i`.
+    fn hide_box_at(&self, i: usize, p: Point) -> Option<usize> {
+        self.visible_hide_boxes(i)
+            .iter()
+            .rev()
+            .find(|(_, b)| contains(b.rect, p))
+            .map(|(k, _)| *k)
     }
 
     pub(crate) fn clear_selections_except(&mut self, keep: usize) {
@@ -443,8 +539,10 @@ impl Session {
     }
 
     pub fn pointer_up(&mut self, i: usize, p: Point) -> Effect {
+        let p = self.overlays[i].clamp(p);
+        let hit = self.hide_box_at(i, p);
         let o = &mut self.overlays[i];
-        o.pointer = o.clamp(p);
+        o.pointer = p;
         match o.drag {
             Drag::Selecting(_) if !o.did_drag => o.selection = None,
             Drag::Drawing(_) => {
@@ -452,6 +550,14 @@ impl Session {
                     && (o.did_drag || c.is_path())
                 {
                     o.annotations.push(c);
+                    o.undo.push(Undo::Annotation);
+                }
+            }
+            // A click (not a drag) on a hide box shows it, or hides it again.
+            Drag::Moving(..) if !o.did_drag => {
+                if let Some(k) = hit {
+                    o.hide_boxes[k].hidden = !o.hide_boxes[k].hidden;
+                    o.undo.push(Undo::Toggle(k));
                 }
             }
             _ => {}
@@ -582,12 +688,20 @@ impl Session {
         Effect::all()
     }
 
+    /// Takes back the last drawing or hide-box click on the focused screen.
     pub fn undo(&mut self) -> Effect {
         let i = self.focused;
-        if self.overlays[i].annotations.pop().is_some() {
-            Effect::one(i)
-        } else {
-            Effect::beep()
+        let o = &mut self.overlays[i];
+        match o.undo.pop() {
+            Some(Undo::Annotation) => {
+                o.annotations.pop();
+                Effect::one(i)
+            }
+            Some(Undo::Toggle(k)) => {
+                o.hide_boxes[k].hidden = !o.hide_boxes[k].hidden;
+                Effect::one(i)
+            }
+            None => Effect::beep(),
         }
     }
 
@@ -630,6 +744,7 @@ impl Session {
                         width: 0.0,
                         marker: false,
                     });
+                    o.undo.push(Undo::Annotation);
                 }
             }
         }
@@ -660,6 +775,7 @@ impl Session {
         }
         if contains(sel, p) {
             return match self.tool {
+                None if self.hide_box_at(i, p).is_some() => CursorKind::Pointer,
                 None => CursorKind::Move,
                 Some(Tool::Text) if self.text_index(i, p).is_some() => CursorKind::Move,
                 Some(Tool::Text) => CursorKind::Text,
@@ -1100,5 +1216,126 @@ pub(crate) mod tests {
         click_button(&mut s, Button::Search, Mods::default());
         drag(&mut s, 0, pt(50.0, 30.0), pt(50.0, 30.0));
         assert!(!s.search_open);
+    }
+
+    use crate::scan::HideBox;
+    use snapline_core::sensitive_text::SensitiveCategory;
+
+    fn found(rect: Rect) -> Vec<HideBox> {
+        vec![HideBox {
+            rect,
+            category: SensitiveCategory::Payment,
+            hidden: true,
+        }]
+    }
+
+    fn black_at(image: &Pixmap, x: u32, y: u32) -> bool {
+        let c = image.pixel(x, y).unwrap();
+        c.red() == 0 && c.green() == 0 && c.blue() == 0
+    }
+
+    // Review Focus 2.
+    #[test]
+    fn commands_wait_for_the_scan() {
+        let mut s = selected(1.0);
+        s.begin_scan();
+        assert_eq!(
+            s.key(Key::Char('c'), ctrl()).command,
+            None,
+            "held while scanning"
+        );
+        let effect = s.scan_done(0, Ok(found(Rect::new(20.0, 20.0, 30.0, 10.0))));
+        assert_eq!(
+            effect.command,
+            Some(Command::Copy),
+            "released when the scan is done"
+        );
+        assert_eq!(
+            s.scan_done(1, Ok(vec![])).command,
+            None,
+            "released only once"
+        );
+    }
+
+    // Review Focus 2.
+    #[test]
+    fn export_covers_what_the_scan_found() {
+        let mut s = selected(1.0);
+        s.begin_scan();
+        s.scan_done(0, Ok(found(Rect::new(20.0, 20.0, 30.0, 10.0))));
+        let image = s.export().unwrap(); // selection starts at (10, 10)
+        assert!(black_at(&image, 15, 15), "the box is black in the export");
+        assert!(!black_at(&image, 60, 40), "the rest is untouched");
+    }
+
+    // Review Focus 3.
+    #[test]
+    fn a_failed_scan_releases_held_commands_and_says_why() {
+        let mut s = selected(1.0);
+        s.begin_scan();
+        s.key(Key::Char('s'), ctrl());
+        let effect = s.scan_done(0, Err("auto-hide unavailable".into()));
+        assert_eq!(effect.command, Some(Command::Save));
+        assert_eq!(
+            s.overlays[0].scan_note.as_deref(),
+            Some("auto-hide unavailable")
+        );
+        assert!(!s.overlays[0].scanning);
+    }
+
+    // Review Focus 5.
+    #[test]
+    fn clicking_a_box_shows_it_and_undo_hides_it_again() {
+        let mut s = selected(1.0);
+        s.begin_scan();
+        s.scan_done(0, Ok(found(Rect::new(20.0, 20.0, 30.0, 10.0))));
+        drag(&mut s, 0, pt(25.0, 25.0), pt(25.0, 25.0));
+        assert!(!s.overlays[0].hide_boxes[0].hidden, "a click shows it");
+        assert!(!black_at(&s.export().unwrap(), 15, 15));
+        assert_eq!(s.undo(), Effect::one(0));
+        assert!(s.overlays[0].hide_boxes[0].hidden, "undo hides it again");
+    }
+
+    // Review Focus 5.
+    #[test]
+    fn auto_hide_off_exports_everything() {
+        let mut s = selected(1.0);
+        s.begin_scan();
+        s.scan_done(0, Ok(found(Rect::new(20.0, 20.0, 30.0, 10.0))));
+        s.auto_hide = false;
+        assert_eq!(s.visible_hide_boxes(0), []);
+        assert!(!black_at(&s.export().unwrap(), 15, 15));
+    }
+
+    #[test]
+    fn boxes_outside_the_selection_are_ignored() {
+        let mut s = selected(1.0);
+        s.begin_scan();
+        s.scan_done(0, Ok(found(Rect::new(300.0, 200.0, 30.0, 10.0))));
+        assert_eq!(s.visible_hide_boxes(0), []);
+    }
+
+    #[test]
+    fn the_pointer_shows_a_hand_over_a_box() {
+        let mut s = selected(1.0);
+        s.begin_scan();
+        s.scan_done(0, Ok(found(Rect::new(20.0, 20.0, 30.0, 10.0))));
+        s.pointer_move(0, pt(25.0, 25.0));
+        assert_eq!(s.cursor(0), CursorKind::Pointer);
+    }
+
+    #[test]
+    fn undo_still_removes_drawings_in_order() {
+        let mut s = selected(1.0);
+        s.begin_scan();
+        s.scan_done(0, Ok(found(Rect::new(20.0, 20.0, 30.0, 10.0))));
+        drag(&mut s, 0, pt(25.0, 25.0), pt(25.0, 25.0)); // show the box
+        s.tool = Some(Tool::Rectangle);
+        drag(&mut s, 0, pt(60.0, 30.0), pt(90.0, 50.0));
+        s.undo();
+        assert_eq!(s.overlays[0].annotations, [], "the drawing goes first");
+        assert!(!s.overlays[0].hide_boxes[0].hidden);
+        s.undo();
+        assert!(s.overlays[0].hide_boxes[0].hidden, "then the box click");
     }
 }

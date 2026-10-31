@@ -607,6 +607,7 @@ fn cursor_icon(kind: CursorKind) -> CursorIcon {
         CursorKind::ResizeVertical => CursorIcon::NsResize,
         CursorKind::ResizeDiagonalDown => CursorIcon::NwseResize,
         CursorKind::ResizeDiagonalUp => CursorIcon::NeswResize,
+        CursorKind::Pointer => CursorIcon::Pointer,
     }
 }
 

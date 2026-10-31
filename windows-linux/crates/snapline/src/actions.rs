@@ -52,7 +52,7 @@ pub fn run(command: Command, image: &Pixmap, settings: &Settings) -> Result<Opti
             Ok(Some(Done::Saved(path)))
         }
         // Uploads are handled by the app itself; Cancel has nothing to do.
-        Command::Cancel | Command::Upload | Command::Search(_) => Ok(None),
+        Command::Cancel | Command::Upload | Command::Search(_) | Command::CopyText => Ok(None),
     }
 }
 
