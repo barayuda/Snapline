@@ -54,20 +54,15 @@ jobs:
           name: snapline-windows
           path: windows-linux/target/release/snapline.exe
           if-no-files-found: error
-      - name: Build the installer
+      - name: Build the installer, zip and checksums
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (Test-Path $iscc) { "Inno Setup: preinstalled" } else { "Inno Setup: installing"; choco install innosetup --no-progress -y }
-          $version = (cargo pkgid -p snapline) -replace '.*[#@]', ''
-          & $iscc /Qp /DVersion=$version "/DSource=$PWD\target\release\snapline.exe" "/O$PWD\target\installer" installer\snapline.iss
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        run: ./installer/package.ps1 -Version ((cargo pkgid -p snapline) -replace '.*[#@]', '')
       - name: Install, check and uninstall
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $setup = Get-ChildItem target\installer\Snapline-Setup-*.exe | Select-Object -First 1
+          $setup = Get-ChildItem target\dist\Snapline-Setup-*.exe | Select-Object -First 1
           Start-Process $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=startup' -Wait
           $exe = "$env:LOCALAPPDATA\Programs\Snapline\snapline.exe"
           if (-not (Test-Path $exe)) { throw "not installed" }
@@ -82,6 +77,6 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: runner.os == 'Windows'
         with:
-          name: snapline-windows-installer
-          path: windows-linux/target/installer/*.exe
+          name: snapline-windows-dist
+          path: windows-linux/target/dist/*
           if-no-files-found: error
