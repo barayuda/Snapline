@@ -4,12 +4,28 @@
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
-pub use linux::take_focus;
-#[cfg(target_os = "linux")]
 pub use linux::{
     announce_settings_changed, beep, claim, cursor_position, email, launch_at_login,
     never_activate, reveal, session_problem, set_launch_at_login, shell_verb, watch_settings,
     work_area,
+};
+#[cfg(target_os = "linux")]
+pub use linux::{keyring_unavailable as linux_keyring_unavailable, take_focus};
+
+/// Where Snapline keeps secrets, by the name users know.
+pub const SECRET_STORE: &str = if cfg!(windows) {
+    "Credential Manager"
+} else if cfg!(target_os = "linux") {
+    "the keyring"
+} else {
+    "the Keychain"
+};
+
+/// Where the tray icon is.
+pub const TRAY_PLACE: &str = if cfg!(windows) {
+    "next to the clock"
+} else {
+    "in the panel"
 };
 
 /// Why Snapline cannot run in this session; other systems always can.

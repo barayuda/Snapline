@@ -88,7 +88,7 @@ pub struct Settings {
     /// The Snapline folder in My Drive, once created.
     pub drive_folder_id: String,
     pub auto_hide: AutoHide,
-    /// The app Ctrl+E opens; empty means the Windows default (Paint).
+    /// The app Ctrl+E opens; empty means the system default (Paint on Windows, the image viewer on Linux).
     pub editor: PathBuf,
     /// Save at 100 % size on high-DPI screens (macOS: "Downscale Retina screens").
     pub downscale: bool,
@@ -219,6 +219,14 @@ pub fn split_shortcuts(
     names.iter().cloned().partition(|n| try_register(n))
 }
 
+#[cfg(windows)]
+const PRTSCN_HINT: &str = "\n\nOn Windows 11 this is usually the Snipping Tool. To give PrtScn to Snapline, turn off \
+     Settings → Accessibility → Keyboard → \"Use the Print screen key to open screen capture\", then restart \
+     Snapline.";
+#[cfg(not(windows))]
+const PRTSCN_HINT: &str = "\n\nOn Linux the desktop's own screenshot tool usually has PrtScn. To give PrtScn to \
+     Snapline, remove that shortcut in your desktop's keyboard settings, then restart Snapline.";
+
 /// What to tell the user about capture shortcuts that could not be registered (`None` when all worked).
 /// `failed` and `working` hold shortcut names as in the settings file.
 #[must_use]
@@ -237,10 +245,7 @@ pub fn shortcut_note(failed: &[String], working: &[String]) -> Option<String> {
         labels(failed)
     );
     if failed.iter().any(|n| n == "PrintScreen") {
-        note.push_str(
-            "\n\nOn Windows 11 this is usually the Snipping Tool. To give PrtScn to Snapline, turn off Settings → \
-             Accessibility → Keyboard → \"Use the Print screen key to open screen capture\", then restart Snapline.",
-        );
+        note.push_str(PRTSCN_HINT);
     }
     if working.is_empty() {
         note.push_str("\n\nYou can still take a screenshot from the tray icon.");
@@ -335,6 +340,7 @@ mod tests {
     }
 
     // The common Windows 11 case: the Snipping Tool owns PrtScn, Ctrl+Shift+1 still works.
+    #[cfg(windows)]
     #[test]
     fn taken_prtscn_is_explained_with_the_snipping_tool_fix() {
         let note = shortcut_note(&names(&["PrintScreen"]), &names(&["Ctrl+Shift+Digit1"])).unwrap();
@@ -342,6 +348,16 @@ mod tests {
             note.contains("PrtScn")
                 && note.contains("Snipping Tool")
                 && note.contains("Ctrl+Shift+1"),
+            "{note}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn on_linux_the_prtscn_note_points_at_the_desktop_shortcuts() {
+        let note = shortcut_note(&names(&["PrintScreen"]), &names(&["Ctrl+Shift+Digit1"])).unwrap();
+        assert!(
+            note.contains("keyboard settings") && !note.contains("Snipping Tool"),
             "{note}"
         );
     }

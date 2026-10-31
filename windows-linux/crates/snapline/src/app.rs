@@ -150,7 +150,8 @@ impl App {
         match Keyring::open() {
             Ok(store) => self.secrets = Some(store),
             Err(e) => show_error(&format!(
-                "Snapline cannot reach Credential Manager, so uploads are off: {e}"
+                "Snapline cannot reach {}, so uploads are off: {e}",
+                platform::SECRET_STORE
             )),
         }
         let proxy = Mutex::new(self.proxy.clone());
@@ -553,7 +554,10 @@ impl App {
             );
         }
         let (Some(secrets), Some(path)) = (self.secrets, Settings::path()) else {
-            let message = "Snapline cannot reach its settings or Credential Manager.".into();
+            let message = format!(
+                "Snapline cannot reach its settings or {}.",
+                platform::SECRET_STORE
+            );
             return self.show_popup(event_loop, PopupState::Failed { message }, None);
         };
         self.uploading = true;

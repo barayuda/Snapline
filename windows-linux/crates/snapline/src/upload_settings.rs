@@ -80,7 +80,10 @@ impl UploadForm {
             ),
         };
         let status = if let Err(e) = stored {
-            (format!("Could not save to Credential Manager: {e}"), false)
+            (
+                format!("Could not save to {}: {e}", crate::platform::SECRET_STORE),
+                false,
+            )
         } else {
             let empty: Vec<&str> = fields
                 .iter()
@@ -150,9 +153,10 @@ pub fn run_window() {
         return; // ponytail: the open window is not brought to the front
     }
     let (Some(path), Ok(store)) = (Settings::path(), Keyring::open()) else {
-        return crate::platform::show_error(
-            "Snapline cannot reach its settings or Credential Manager.",
-        );
+        return crate::platform::show_error(&format!(
+            "Snapline cannot reach its settings or {}.",
+            crate::platform::SECRET_STORE
+        ));
     };
     let (settings, problem) = Settings::load(&path);
     let mut form = UploadForm::load(&settings, &store);
@@ -300,7 +304,13 @@ impl SettingsApp {
                 false,
             );
         });
-        ui.label(eframe::egui::RichText::new("Keys (stored in Credential Manager)").strong());
+        ui.label(
+            eframe::egui::RichText::new(format!(
+                "Keys (stored in {})",
+                crate::platform::SECRET_STORE
+            ))
+            .strong(),
+        );
         eframe::egui::Grid::new("keys")
             .num_columns(2)
             .show(ui, |ui| {

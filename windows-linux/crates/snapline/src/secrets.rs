@@ -1,4 +1,5 @@
-//! Secrets in the OS credential store (Credential Manager on Windows, the Keychain on macOS), never in
+//! Secrets in the OS credential store (Credential Manager on Windows, the Secret Service keyring on Linux, the
+//! Keychain on macOS), never in
 //! `settings.toml`. Same service and account names as the macOS app.
 
 const SERVICE: &str = "dev.barayuda.snapline";
@@ -54,10 +55,18 @@ impl Keyring {
         #[cfg(target_os = "macos")]
         let store =
             apple_native_keyring_store::keychain::Store::new().map_err(|e| e.to_string())?;
-        // ponytail: Linux gets the Secret Service store in Phase 6; until then secrets last for one run.
-        #[cfg(not(any(windows, target_os = "macos")))]
+        #[cfg(target_os = "linux")]
+        let store = zbus_secret_service_keyring_store::Store::new()
+            .map_err(|e| crate::platform::linux_keyring_unavailable(&e.to_string()))?;
+        #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
         let store = keyring_core::mock::Store::new().map_err(|e| e.to_string())?;
         keyring_core::set_default_store(store);
+        // Ask once, so a missing or locked-out keyring shows now and not at the first upload.
+        #[cfg(target_os = "linux")]
+        match Self::entry(Secret::S3AccessKey)?.get_password() {
+            Ok(_) | Err(keyring_core::Error::NoEntry) => {}
+            Err(e) => return Err(crate::platform::linux_keyring_unavailable(&e.to_string())),
+        }
         Ok(Self)
     }
 
@@ -113,6 +122,18 @@ impl SecretStore for MemoryStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A real round trip through the Secret Service. CI unlocks a throwaway GNOME Keyring for it.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "needs a session bus with an unlocked keyring: CI runs it under dbus-run-session"]
+    fn linux_secrets_round_trip_through_the_keyring() {
+        let store = Keyring::open().unwrap();
+        store.put(Secret::S3AccessKey, "AKIA-test").unwrap();
+        assert_eq!(store.get(Secret::S3AccessKey).as_deref(), Some("AKIA-test"));
+        store.remove(Secret::S3AccessKey).unwrap();
+        assert_eq!(store.get(Secret::S3AccessKey), None);
+    }
 
     #[test]
     fn accounts_match_the_macos_keychain_names() {

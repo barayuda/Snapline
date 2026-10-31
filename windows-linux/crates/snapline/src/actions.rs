@@ -97,9 +97,15 @@ pub fn temp_png(png: &[u8], name: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// What to say when Share cannot open: the screenshot is shown in Explorer instead.
+/// What to say when Share cannot open: the screenshot is shown in Explorer (Linux: the file manager) instead.
 #[must_use]
 pub fn share_unavailable(why: &str) -> String {
+    #[cfg(target_os = "linux")]
+    return format!(
+        "Snapline could not open your mail app ({why}). The screenshot is selected in your file manager, so you \
+         can drag it where you need it."
+    );
+    #[cfg(not(target_os = "linux"))]
     format!(
         "Windows could not open Share here ({why}). The screenshot is selected in Explorer, so you can drag it \
          where you need it."
@@ -285,9 +291,20 @@ mod tests {
         assert!(crate::platform::temp_dir().starts_with(dirs::cache_dir().unwrap()));
     }
 
+    #[cfg(windows)]
     #[test]
     fn share_fallback_says_where_the_file_is() {
         let text = share_unavailable("class not registered");
         assert!(text.contains("Explorer") && text.contains("class not registered"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_share_fallback_says_where_the_file_is() {
+        let text = share_unavailable("xdg-email is missing");
+        assert!(
+            text.contains("file manager") && text.contains("xdg-email is missing"),
+            "{text}"
+        );
     }
 }

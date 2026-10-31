@@ -373,6 +373,15 @@ pub fn set_launch_at_login(on: bool) -> Result<(), String> {
     set_autostart(&dir, on.then(|| exec_line(&install)).as_deref())
 }
 
+/// Why uploads are off when the keyring cannot be reached, and what to do.
+#[must_use]
+pub fn keyring_unavailable(why: &str) -> String {
+    format!(
+        "{why}. Snapline keeps bucket keys and your Google sign-in in the desktop keyring (Secret Service). Install \
+         and start GNOME Keyring or KWallet, then restart Snapline."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -451,6 +460,19 @@ mod tests {
     fn flatpak_autostart_goes_to_the_real_config_folder() {
         let dir = autostart_dir(&Install::Flatpak("dev.barayuda.Snapline".into())).unwrap();
         assert_eq!(dir, dirs::home_dir().unwrap().join(".config/autostart"));
+    }
+
+    // Review Focus 2: i3 or a bare Xfce has no Secret Service.
+    #[test]
+    fn a_missing_keyring_says_what_to_install() {
+        let text =
+            keyring_unavailable("org.freedesktop.secrets was not provided by any .service files");
+        assert!(
+            text.contains("GNOME Keyring")
+                && text.contains("KWallet")
+                && text.contains("not provided"),
+            "{text}"
+        );
     }
 
     #[test]

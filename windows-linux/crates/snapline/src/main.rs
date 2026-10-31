@@ -51,7 +51,10 @@ fn main() {
         return upload_settings::run_window();
     }
     if !platform::claim_single_instance() {
-        platform::show_error("Snapline is already running. Look for its icon next to the clock.");
+        platform::show_error(&format!(
+            "Snapline is already running. Look for its icon {}.",
+            platform::TRAY_PLACE
+        ));
         return;
     }
     let event_loop = match EventLoop::<app::UserEvent>::with_user_event().build() {
