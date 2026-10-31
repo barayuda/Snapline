@@ -48,7 +48,8 @@ say so). The workflow signs `snapline.exe` and the installer as soon as these ex
    - secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`.
 
 The next tag is signed. No client secret is stored: the workflow signs in with OIDC. Signing runs in its own job,
-which builds nothing with cargo, so only Azure's own steps can ask for the token.
+which builds nothing with cargo, so no dependency's build script runs while the token can be requested. Every step
+in that job can still request it (checkout, the artifact download, Inno Setup), so keep that job to those steps.
 
 ## What the installer does
 

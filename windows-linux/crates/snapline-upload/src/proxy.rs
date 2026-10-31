@@ -43,9 +43,20 @@ impl SystemProxy {
         (proxy.http.is_some() || proxy.https.is_some()).then_some(proxy)
     }
 
-    /// The proxy ("host:port") for `url`, or `None` to connect directly.
+    /// The proxy ("host:port") for `url`, or `None` to connect directly. Loopback is always direct, as in Windows.
     #[must_use]
     pub fn for_url(&self, url: &url::Url) -> Option<&str> {
+        let loopback = match url.host()? {
+            url::Host::Ipv4(ip) => ip.is_loopback(),
+            url::Host::Ipv6(ip) => ip.is_loopback(),
+            url::Host::Domain(d) => {
+                let d = d.to_ascii_lowercase();
+                d == "localhost" || d.ends_with(".localhost")
+            }
+        };
+        if loopback {
+            return None;
+        }
         let host = url.host_str()?.to_ascii_lowercase();
         if self.bypass.iter().any(|p| bypassed(&host, p)) {
             return None;
@@ -107,6 +118,20 @@ mod tests {
         assert_eq!(SystemProxy::from_registry(false, "a:80", ""), None);
         assert_eq!(SystemProxy::from_registry(true, "  ", ""), None);
         assert_eq!(SystemProxy::from_registry(true, "socks=c:1080", ""), None);
+    }
+
+    // Review finding: as in Windows itself, loopback never goes through the proxy (a local MinIO must work).
+    #[test]
+    fn loopback_is_never_proxied() {
+        let p = SystemProxy::from_registry(true, "a:80", "").unwrap();
+        for local in [
+            "http://127.0.0.1:9000/b",
+            "http://localhost:9000/",
+            "http://[::1]:9000/",
+            "http://minio.localhost/",
+        ] {
+            assert_eq!(p.for_url(&url(local)), None, "{local}");
+        }
     }
 
     // Review Focus 2.

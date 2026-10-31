@@ -108,8 +108,9 @@ jobs:
 
   release:
     needs: [build, sign]
-    # Runs after signing, or when signing was skipped (not set up); never after a failed or cancelled run.
-    if: ${{ !cancelled() && needs.build.result == 'success' && needs.sign.result != 'failure' }}
+    # Runs after signing succeeded, or when signing was skipped (not set up); never after a failed, cancelled or
+    # timed-out sign job, which would otherwise ship the unsigned files.
+    if: ${{ !cancelled() && needs.build.result == 'success' && (needs.sign.result == 'success' || needs.sign.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -122,7 +123,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
-          SIGNED: ${{ needs.build.outputs.signed }}
+          # Signed only if the sign job really ran and succeeded.
+          SIGNED: ${{ needs.sign.result == 'success' }}
         run: |
           {
             echo "Download **Snapline-Setup-$VERSION.exe** and run it (no admin rights needed), or use the portable zip."
