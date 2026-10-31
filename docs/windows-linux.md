@@ -24,6 +24,8 @@ app, and Preferences. The macOS app stays in Swift and keeps working as it does 
 | Search similar and confirmations | In Phase 3, with uploads | Search is an upload plus a link; confirmations share the upload popup. Barayuda, 30 Oct 2026 |
 | Symbol repair deferred | Copy Text copies the OCR text in reading order; `SymbolRepair` and the "check the copied text" popup wait | Windows apps rarely show ⌘ ⇧ ⌥ symbols. Barayuda, 31 Oct 2026 |
 | Auto-hide settings | An Auto-hide tab in the settings window, which becomes "Snapline settings" (Upload and Auto-hide tabs) | Choosing what to hide should not wait for Phase 5. Barayuda, 31 Oct 2026 |
+| Phase 5 split | 5a: edit, share, print, the General tab and the Phase 4 minors users notice. 5b: installer, code signing, website and privacy policy | Each half can be checked on Windows before shipping. Barayuda, 31 Oct 2026 |
+| Email on Windows | The Windows Share window, as a "Share" button | Share reaches Outlook (new and classic), Mail and Teams; MAPI does not work with the new Outlook. Barayuda, 31 Oct 2026 |
 
 ## Repo layout
 
@@ -79,8 +81,11 @@ Each phase ends with something that works on its own and has its own plan in `do
 4. **Text recognition.** Windows OCR, auto-hide with click-to-reveal, Copy Text with reading order, face detection,
    and the Auto-hide tab. `SymbolRepair` and the review popup moved out of this phase (see Decisions). Plan:
    [docs/plans/2026-10-31-windows-text-recognition.md](plans/2026-10-31-windows-text-recognition.md).
-5. **Everything else, and shipping.** Search similar, email, print, edit in another app, Preferences window, launch at
-   login, installer, code signing, website and privacy policy updated for Windows.
+5. **Everything else, and shipping.**
+   - 5a: edit in another app, Share (in place of email), print, the General tab (shortcut, tray click, save folder,
+     editor, saving at 100 %, launch at sign-in), and the Phase 4 minors users notice. Plan:
+     [docs/plans/2026-10-31-windows-more-actions.md](plans/2026-10-31-windows-more-actions.md).
+   - 5b: installer, code signing, website and privacy policy updated for Windows.
 6. **Linux X11**, then **Linux Wayland** (portals, Flatpak).
 
 ## Risks
