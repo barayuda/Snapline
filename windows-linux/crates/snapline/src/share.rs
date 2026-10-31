@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::Window;
 
-/// How long the helper window stays: Share never says when it closed, so it goes after this.
+/// How long the helper window stays at most, in case Share never reports that it closed.
 const KEEP: Duration = Duration::from_mins(2);
 
 /// Share, open for one file. Dropping it closes the helper window and stops answering Share.
@@ -17,11 +17,16 @@ pub struct Open {
     _window: Window,
 }
 
-/// Opens Share for `file`.
+/// Opens Share for `file`. `on_closed` runs (on another thread) when the user shares or cancels.
 ///
 /// # Errors
 /// When Windows cannot show Share here (Windows Server, an old build); the error is for the user.
-pub fn open(event_loop: &ActiveEventLoop, file: &Path, title: &str) -> Result<Open, String> {
+pub fn open(
+    event_loop: &ActiveEventLoop,
+    file: &Path,
+    title: &str,
+    on_closed: impl Fn() + Clone + Send + 'static,
+) -> Result<Open, String> {
     #[cfg(windows)]
     {
         use winit::platform::windows::WindowAttributesExtWindows;
@@ -33,8 +38,9 @@ pub fn open(event_loop: &ActiveEventLoop, file: &Path, title: &str) -> Result<Op
         let window = event_loop
             .create_window(attributes)
             .map_err(|e| e.to_string())?;
+        crate::platform::hide_from_alt_tab(&window);
         window.focus_window();
-        let sharing = windows_share::show(&window, file, title)?;
+        let sharing = windows_share::show(&window, file, title, on_closed)?;
         Ok(Open {
             until: Instant::now() + KEEP,
             _sharing: sharing,
@@ -43,7 +49,7 @@ pub fn open(event_loop: &ActiveEventLoop, file: &Path, title: &str) -> Result<Op
     }
     #[cfg(not(windows))]
     {
-        let _ = (event_loop, file, title, KEEP);
+        let _ = (event_loop, file, title, on_closed, KEEP);
         Err("Share is not available on this system yet".into())
     }
 }
@@ -51,12 +57,14 @@ pub fn open(event_loop: &ActiveEventLoop, file: &Path, title: &str) -> Result<Op
 #[cfg(windows)]
 mod windows_share {
     use std::path::Path;
-    use windows::ApplicationModel::DataTransfer::{DataRequestedEventArgs, DataTransferManager};
+    use windows::ApplicationModel::DataTransfer::{
+        DataPackage, DataRequestedEventArgs, DataTransferManager, ShareCompletedEventArgs,
+    };
     use windows::Foundation::TypedEventHandler;
     use windows::Storage::{IStorageItem, StorageFile};
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::Shell::IDataTransferManagerInterop;
-    use windows::core::{AgileReference, HSTRING, Interface, Ref};
+    use windows::core::{AgileReference, HSTRING, IInspectable, Interface, Ref};
     use windows_collections::IIterable;
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use winit::window::Window;
@@ -81,7 +89,12 @@ mod windows_share {
         Ok(HWND(win32.hwnd.get() as *mut core::ffi::c_void))
     }
 
-    pub fn show(window: &Window, file: &Path, title: &str) -> Result<Sharing, String> {
+    pub fn show(
+        window: &Window,
+        file: &Path,
+        title: &str,
+        on_closed: impl Fn() + Clone + Send + 'static,
+    ) -> Result<Sharing, String> {
         let fail = |e: windows::core::Error| e.message();
         let hwnd = hwnd(window)?;
         // The file is looked up now, not in the handler, so Share's request never waits on disk.
@@ -94,7 +107,23 @@ mod windows_share {
             let data = args.ok()?.Request()?.Data()?;
             data.Properties()?.SetTitle(&title)?;
             let item: IStorageItem = file.resolve()?.cast()?;
-            data.SetStorageItemsReadOnly(&IIterable::from(vec![Some(item)]))
+            data.SetStorageItemsReadOnly(&IIterable::from(vec![Some(item)]))?;
+            // Shared or cancelled: the helper window can go, so the focus returns where it was.
+            let done = on_closed.clone();
+            data.ShareCompleted(&TypedEventHandler::new(
+                move |_: Ref<DataPackage>, _: Ref<ShareCompletedEventArgs>| {
+                    done();
+                    Ok(())
+                },
+            ))?;
+            let gone = on_closed.clone();
+            data.ShareCanceled(&TypedEventHandler::new(
+                move |_: Ref<DataPackage>, _: Ref<IInspectable>| {
+                    gone();
+                    Ok(())
+                },
+            ))?;
+            Ok(())
         });
         let interop = windows::core::factory::<DataTransferManager, IDataTransferManagerInterop>()
             .map_err(fail)?;

@@ -386,10 +386,35 @@ pub fn open_settings() {
 }
 
 /// Keeps a popup from ever taking the focus or showing in Alt+Tab (`with_active(false)` covers only the first show).
-#[cfg(windows)]
 pub fn never_activate(window: &winit::window::Window) {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW};
+        add_ex_style(window, WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = window;
+}
+
+/// Keeps a helper window out of Alt+Tab and the taskbar (it may still take the focus).
+#[cfg_attr(
+    not(windows),
+    allow(dead_code, reason = "Share's helper window is Windows only")
+)]
+pub fn hide_from_alt_tab(window: &winit::window::Window) {
+    #[cfg(windows)]
+    add_ex_style(
+        window,
+        windows_sys::Win32::UI::WindowsAndMessaging::WS_EX_TOOLWINDOW,
+    );
+    #[cfg(not(windows))]
+    let _ = window;
+}
+
+#[cfg(windows)]
+fn add_ex_style(window: &winit::window::Window, flags: u32) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GWL_EXSTYLE, GetWindowLongPtrW, SetWindowLongPtrW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+        GWL_EXSTYLE, GetWindowLongPtrW, SetWindowLongPtrW,
     };
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
     let Ok(handle) = window.window_handle() else {
@@ -399,19 +424,16 @@ pub fn never_activate(window: &winit::window::Window) {
         return;
     };
     let hwnd = win32.hwnd.get() as windows_sys::Win32::Foundation::HWND;
-    // SAFETY: `hwnd` is the live window winit just created; only extended style bits are added.
+    // SAFETY: `hwnd` is a live window of ours; only extended style bits are added.
     unsafe {
         let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
         SetWindowLongPtrW(
             hwnd,
             GWL_EXSTYLE,
-            style | isize::try_from(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW).unwrap_or_default(),
+            style | isize::try_from(flags).unwrap_or_default(),
         );
     }
 }
-
-#[cfg(not(windows))]
-pub fn never_activate(_window: &winit::window::Window) {}
 
 #[cfg(test)]
 mod tests {

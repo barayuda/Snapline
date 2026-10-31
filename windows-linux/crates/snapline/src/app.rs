@@ -54,6 +54,8 @@ pub enum UserEvent {
     TextRead(Result<String, String>),
     /// The settings window saved a change.
     SettingsChanged,
+    /// The user shared or cancelled: Share's helper window can close.
+    ShareClosed,
 }
 
 struct Capture {
@@ -409,7 +411,11 @@ impl App {
             Err(e) => return show_error(&e),
         };
         self.share = None; // one Share at a time
-        match share::open(event_loop, &file, &name) {
+        let proxy = self.proxy.clone();
+        let on_closed = move || {
+            let _ = proxy.send_event(UserEvent::ShareClosed);
+        };
+        match share::open(event_loop, &file, &name, on_closed) {
             Ok(open) => self.share = Some(open),
             Err(why) => {
                 platform::reveal(&file);
@@ -932,6 +938,7 @@ impl ApplicationHandler<UserEvent> for App {
             }
             UserEvent::TextRead(result) => self.text_read(result, event_loop),
             UserEvent::SettingsChanged => self.reload_settings(),
+            UserEvent::ShareClosed => self.share = None,
             UserEvent::Menu(id) if id == self.why => {
                 if let Some(note) = &self.shortcut_note {
                     platform::show_info(note);
