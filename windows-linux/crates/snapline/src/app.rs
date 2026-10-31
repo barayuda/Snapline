@@ -223,8 +223,8 @@ impl App {
             .collect()
     }
 
-    /// The settings window saved a change: re-read the file, register the shortcuts again and rebuild the tray
-    /// icon, so the menu labels and the tray click follow. A file that cannot be read changes nothing.
+    /// The settings window saved a change: re-read the file, register the shortcuts again and update the tray
+    /// menu, so the menu labels and the tray click follow. A file that cannot be read changes nothing.
     fn reload_settings(&mut self) {
         let Some(path) = Settings::path() else { return };
         let (settings, problem) = Settings::load(&path);
@@ -233,14 +233,24 @@ impl App {
         }
         self.settings = settings;
         let labels = self.register_hotkeys();
-        self.tray = None;
-        match self.build_tray(&labels) {
-            Ok(tray) => self.tray = Some(tray),
-            Err(e) => show_error(&format!("Snapline could not add its tray icon: {e}")),
+        // Change the existing icon: a new one may land in the overflow, away from where the user pinned it.
+        if let Some(tray) = &self.tray {
+            match self.build_menu(&labels) {
+                Ok(menu) => {
+                    tray.set_menu(Some(Box::new(menu)));
+                    tray.set_show_menu_on_left_click(self.settings.tray_click == TrayClick::Menu);
+                }
+                Err(e) => show_error(&format!("Snapline could not update its tray menu: {e}")),
+            }
+        } else {
+            match self.build_tray(&labels) {
+                Ok(tray) => self.tray = Some(tray),
+                Err(e) => show_error(&format!("Snapline could not add its tray icon: {e}")),
+            }
         }
     }
 
-    fn build_tray(&self, labels: &[String]) -> Result<TrayIcon, String> {
+    fn build_menu(&self, labels: &[String]) -> Result<Menu, String> {
         let title = if labels.is_empty() {
             "Take Screenshot".to_owned()
         } else {
@@ -267,6 +277,11 @@ impl App {
             &MenuItem::with_id(self.quit.clone(), "Quit Snapline", true, None),
         ])
         .map_err(|e| e.to_string())?;
+        Ok(menu)
+    }
+
+    fn build_tray(&self, labels: &[String]) -> Result<TrayIcon, String> {
+        let menu = self.build_menu(labels)?;
         let icon = Icon::from_rgba(icon::tray_rgba(32, icon::TrayState::Normal), 32, 32)
             .map_err(|e| e.to_string())?;
         TrayIconBuilder::new()
@@ -362,7 +377,7 @@ impl App {
                         let _ = proxy.send_event(UserEvent::ScanDone {
                             capture,
                             screen,
-                            result: Err("internal error".into()),
+                            result: Err(recognize::CRASHED.into()),
                         });
                     }
                 });
@@ -928,7 +943,7 @@ impl ApplicationHandler<UserEvent> for App {
                 };
                 let (result, problem) = match result {
                     Ok((boxes, problem)) => (Ok(boxes), problem),
-                    Err(why) => (Err(recognize::UNAVAILABLE.to_owned()), Some(why)),
+                    Err(why) => (Err(recognize::badge_for(&why).to_owned()), Some(why)),
                 };
                 if let Some(why) = &problem {
                     eprintln!("Snapline: auto-hide: {why}");

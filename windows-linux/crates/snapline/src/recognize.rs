@@ -8,6 +8,16 @@ use snapline_overlay::tiny_skia::Pixmap;
 pub const UNAVAILABLE: &str = "auto-hide unavailable";
 /// Shown in the size badge when text or face detection worked but the other did not.
 pub const INCOMPLETE: &str = "auto-hide incomplete";
+/// Shown in the size badge when the scan itself broke (a bug in Snapline, not missing OCR).
+pub const FAILED: &str = "auto-hide failed";
+/// The scan's error when its thread panicked.
+pub const CRASHED: &str = "the scan stopped unexpectedly";
+
+/// The badge for a scan that ended with the error `why`.
+#[must_use]
+pub fn badge_for(why: &str) -> &'static str {
+    if why == CRASHED { FAILED } else { UNAVAILABLE }
+}
 
 /// What a read found, and why a step is missing when only some of the steps worked.
 pub struct Reading {
@@ -106,6 +116,13 @@ mod tests {
     use super::*;
     use snapline_overlay::Rect;
     use snapline_overlay::scan::{Line, Word};
+
+    // Phase 5c: a crashed scan said "auto-hide unavailable", as if OCR were missing.
+    #[test]
+    fn a_crashed_scan_has_its_own_badge() {
+        assert_eq!(badge_for(CRASHED), FAILED);
+        assert_eq!(badge_for(ocr_unavailable(true)), UNAVAILABLE);
+    }
 
     fn line(text: &str) -> Line {
         Line {
