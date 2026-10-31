@@ -168,7 +168,19 @@ pub fn run_value(exe: &std::path::Path) -> String {
     format!("\"{}\"", exe.display())
 }
 
-/// Whether Windows starts this Snapline at sign-in (it may have been turned off in Task Manager).
+/// Whether Task Manager (or Settings → Apps → Startup) lets the `Run` entry start: its `StartupApproved` value
+/// starts with an even byte when on and an odd one (03) when turned off. No value means on.
+#[must_use]
+#[cfg_attr(
+    not(windows),
+    allow(dead_code, reason = "used by launch at sign-in on Windows")
+)]
+pub fn startup_approved(value: Option<&[u8]>) -> bool {
+    value.and_then(<[u8]>::first).is_none_or(|b| b % 2 == 0)
+}
+
+/// Whether Windows starts this Snapline at sign-in: the `Run` value names this exe, and Task Manager has not
+/// turned it off.
 #[must_use]
 pub fn launch_at_login() -> bool {
     #[cfg(windows)]
@@ -177,6 +189,7 @@ pub fn launch_at_login() -> bool {
             return false;
         };
         run_key::get().is_some_and(|v| v.eq_ignore_ascii_case(&run_value(&exe)))
+            && startup_approved(run_key::approval().as_deref())
     }
     #[cfg(not(windows))]
     false
@@ -191,7 +204,9 @@ pub fn set_launch_at_login(on: bool) -> Result<(), String> {
     {
         if on {
             let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-            run_key::set(&run_value(&exe))
+            run_key::set(&run_value(&exe))?;
+            // Turning it on here also undoes "Disabled" from Task Manager.
+            run_key::clear_approval()
         } else {
             run_key::delete()
         }
@@ -208,11 +223,15 @@ pub fn set_launch_at_login(on: bool) -> Result<(), String> {
 mod run_key {
     use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
     use windows_sys::Win32::System::Registry::{
-        HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW,
+        HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_BINARY, RRF_RT_REG_SZ, RegDeleteKeyValueW,
+        RegGetValueW, RegSetKeyValueW,
     };
 
     const KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
     const NAME: &str = "Snapline";
+    /// Where Task Manager keeps its on/off switch for `Run` entries.
+    const APPROVED: &str =
+        r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
 
     fn wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(Some(0)).collect()
@@ -261,7 +280,36 @@ mod run_key {
     }
 
     pub fn delete() -> Result<(), String> {
-        let (key, name) = (wide(KEY), wide(NAME));
+        delete_value(KEY)
+    }
+
+    /// Task Manager's switch for Snapline, when it has one.
+    pub fn approval() -> Option<Vec<u8>> {
+        let (key, name) = (wide(APPROVED), wide(NAME));
+        let mut buf = vec![0u8; 64];
+        let mut bytes = u32::try_from(buf.len()).unwrap_or(u32::MAX);
+        // SAFETY: the strings are NUL-terminated; `buf` holds `bytes` bytes; all live across the call.
+        let status = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                key.as_ptr(),
+                name.as_ptr(),
+                RRF_RT_REG_BINARY,
+                std::ptr::null_mut(),
+                buf.as_mut_ptr().cast(),
+                &raw mut bytes,
+            )
+        };
+        (status == ERROR_SUCCESS).then(|| buf[..bytes as usize].to_vec())
+    }
+
+    /// Removes Task Manager's switch, so Windows runs the `Run` entry again.
+    pub fn clear_approval() -> Result<(), String> {
+        delete_value(APPROVED)
+    }
+
+    fn delete_value(key: &str) -> Result<(), String> {
+        let (key, name) = (wide(key), wide(NAME));
         // SAFETY: the strings are NUL-terminated and live across the call.
         let status = unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, key.as_ptr(), name.as_ptr()) };
         if status == ERROR_SUCCESS || status == ERROR_FILE_NOT_FOUND {
@@ -377,5 +425,18 @@ mod tests {
             )),
             r#""C:\Program Files\Snapline\snapline.exe""#
         );
+    }
+
+    // Review finding: Task Manager turns Snapline off in StartupApproved, not by removing the Run value.
+    #[test]
+    fn task_managers_switch_is_read() {
+        assert!(startup_approved(None), "no entry: Windows runs it");
+        assert!(startup_approved(Some(&[2, 0, 0, 0])));
+        assert!(startup_approved(Some(&[6, 0])));
+        assert!(
+            !startup_approved(Some(&[3, 0, 0, 0, 9, 9])),
+            "turned off in Task Manager"
+        );
+        assert!(!startup_approved(Some(&[7])));
     }
 }

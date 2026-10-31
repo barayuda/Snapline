@@ -453,21 +453,27 @@ impl SettingsApp {
             i.events.iter().find_map(|e| match e {
                 eframe::egui::Event::Key {
                     key,
+                    physical_key,
                     pressed: true,
                     modifiers,
                     ..
-                } => Some((*key, *modifiers)),
+                } => Some((*key, *physical_key, *modifiers)),
                 _ => None,
             })
         });
-        let Some((key, m)) = pressed else { return };
+        let Some((key, physical_key, m)) = pressed else {
+            return;
+        };
         self.recording = false;
         if key == eframe::egui::Key::Escape {
             return;
         }
-        let Some(name) = crate::shortcuts::from_keys(m, key.name()) else {
-            self.general_error = Some("Use Ctrl or Alt with a key, or an F-key on its own.".into());
-            return;
+        let name = match crate::shortcuts::from_event(key, physical_key, m) {
+            Ok(name) => name,
+            Err(why) => {
+                self.general_error = Some(why.into());
+                return;
+            }
         };
         if !crate::shortcuts::is_free(&name, &self.settings.hotkeys) {
             self.general_error = Some("That shortcut is used by another app.".into());
