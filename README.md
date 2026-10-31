@@ -75,8 +75,11 @@ The Windows version is in progress (see [docs/windows-linux.md](docs/windows-lin
 draw, copy, save, upload, share, print, edit, hide sensitive data and copy text. An installer and code signing come
 next; keyboard-symbol repair in Copy Text comes later.
 
-To try it: open the latest successful **windows-linux** run under Actions, download **snapline-windows**, unzip and
-run `snapline.exe`. It is not signed yet, so Windows SmartScreen asks first (More info → Run anyway).
+To install it: download **Snapline-Setup** from the [latest release](https://github.com/barayuda/Snapline/releases/latest)
+and run it (no admin rights needed), or use the portable zip. It is not signed yet, so Windows SmartScreen asks first
+(More info → Run anyway). Preview builds of every push are under Actions: the latest successful **windows-linux**
+run has **snapline-windows** (the exe) and **snapline-windows-dist** (installer, zip and checksums). How releases
+are made: [docs/releasing-windows.md](docs/releasing-windows.md).
 
 - Take a screenshot: PrtScn or Ctrl+Shift+1, or the tray icon's menu. Change the shortcut in the tray menu →
   **Settings…** → General. If PrtScn opens the Snipping Tool instead, turn off Settings → Accessibility → Keyboard →

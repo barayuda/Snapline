@@ -1,0 +1,52 @@
+# Releasing Snapline for Windows
+
+Releases are built by the **windows-release** workflow (`.github/workflows/windows-release.yml`) from a
+`windows-v<version>` tag. It runs the same checks as CI, builds the installer, the portable zip and
+`SHA256SUMS.txt` with `windows-linux/installer/package.ps1`, and creates a **draft** release. Nothing is public until
+you click Publish.
+
+## Cut a release
+
+1. Set the version in `windows-linux/crates/snapline/Cargo.toml` (for example `0.2.0`), commit, and merge to `main`.
+2. Tag that commit and push the tag. The tag must match the version, or the workflow stops before building.
+
+   ```bash
+   git tag -s windows-v0.2.0 -m "Snapline for Windows 0.2.0"
+   git push origin windows-v0.2.0
+   ```
+
+3. Wait for the **windows-release** run to finish, then open the draft under **Releases**. Check that it has
+   `Snapline-Setup-<version>.exe`, `Snapline-<version>-windows-x64.zip` and `SHA256SUMS.txt`, and that the notes read
+   right. Install it once on a Windows PC if the release changes the installer.
+4. Click **Publish release**.
+5. After the first release only: publish the website, so its "Download for Windows" link has a release to point to.
+
+   ```bash
+   git push origin main:website
+   ```
+
+## Turn on code signing later
+
+Until signing is set up, releases are unsigned and Windows SmartScreen asks before the first run (the release notes
+say so). The workflow signs `snapline.exe` and the installer as soon as these exist:
+
+1. In Azure, create an **Artifact Signing** account and a certificate profile (identity validation is part of this).
+2. Create an app registration with a federated credential for this repository's tags
+   (`repo:barayuda/Snapline:ref:refs/tags/windows-v*`), and give it the **… Certificate Profile Signer** role
+   Signer** role on the account.
+3. In the repository's **Settings → Secrets and variables → Actions**:
+   - variables: `AZURE_SIGNING_ENDPOINT` (for example `https://wus2.codesigning.azure.net/`),
+     `AZURE_SIGNING_ACCOUNT`, `AZURE_SIGNING_PROFILE`;
+   - secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`.
+
+The next tag is signed. No client secret is stored: the workflow signs in with OIDC.
+
+## What the installer does
+
+- Installs for the current user in `%LOCALAPPDATA%\Programs\Snapline`, without admin rights, with a Start menu
+  shortcut and an uninstaller (Settings → Apps).
+- "Launch Snapline when I sign in to Windows" writes the same sign-in entry as Snapline's General tab, and clears
+  "Disabled" from Task Manager for it.
+- An upgrade closes a running Snapline first and keeps your earlier choices.
+- Uninstalling removes the program, the shortcut and the sign-in entry. Your settings
+  (`%APPDATA%\Snapline\settings.toml`) and the keys in Windows Credential Manager stay, so a reinstall picks them up.

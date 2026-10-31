@@ -26,6 +26,9 @@ app, and Preferences. The macOS app stays in Swift and keeps working as it does 
 | Auto-hide settings | An Auto-hide tab in the settings window, which becomes "Snapline settings" (Upload and Auto-hide tabs) | Choosing what to hide should not wait for Phase 5. Barayuda, 31 Oct 2026 |
 | Phase 5 split | 5a: edit, share, print, the General tab and the Phase 4 minors users notice. 5b: installer, code signing, website and privacy policy | Each half can be checked on Windows before shipping. Barayuda, 31 Oct 2026 |
 | Email on Windows | The Windows Share window, as a "Share" button | Share reaches Outlook (new and classic), Mail and Teams; MAPI does not work with the new Outlook. Barayuda, 31 Oct 2026 |
+| Windows installer | Inno Setup, per user (no admin), plus a portable zip | Simple to build on CI, no admin prompt, uninstaller and sign-in entry included. Barayuda, 31 Oct 2026 |
+| Code signing | Wired into the release workflow, switched on when an Azure Artifact Signing account exists; unsigned until then | Signing costs money and identity checks; releases need not wait for it. Barayuda, 31 Oct 2026 |
+| Where builds go | GitHub Releases: a `windows-v<version>` tag builds a draft that Barayuda publishes | One public download page; nothing is published by CI alone. Barayuda, 31 Oct 2026 |
 
 ## Repo layout
 
@@ -85,7 +88,9 @@ Each phase ends with something that works on its own and has its own plan in `do
    - 5a: edit in another app, Share (in place of email), print, the General tab (shortcut, tray click, save folder,
      editor, saving at 100 %, launch at sign-in), and the Phase 4 minors users notice. Plan:
      [docs/plans/2026-10-31-windows-more-actions.md](plans/2026-10-31-windows-more-actions.md).
-   - 5b: installer, code signing, website and privacy policy updated for Windows.
+   - 5b: installer, release workflow with optional code signing, website and privacy policy updated for Windows.
+     Plan: [docs/plans/2026-10-31-windows-shipping.md](plans/2026-10-31-windows-shipping.md). How to release:
+     [docs/releasing-windows.md](releasing-windows.md).
 6. **Linux X11**, then **Linux Wayland** (portals, Flatpak).
 
 ## Risks
