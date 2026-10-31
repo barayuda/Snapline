@@ -4192,6 +4192,7 @@ dependencies = [
  "toml 1.1.8+spec-1.1.0",
  "tray-icon",
  "url",
+ "windows",
  "windows-native-keyring-store",
  "windows-sys 0.61.2",
  "winit",
