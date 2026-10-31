@@ -129,7 +129,7 @@ pub fn shell_verb(verb: &str, file: &std::path::Path) -> Result<(), String> {
     if code > 32 {
         Ok(())
     } else {
-        Err(format!("Windows could not {verb} the file (code {code})"))
+        Err(shell_error(verb, code))
     }
 }
 
@@ -145,10 +145,13 @@ pub fn shell_verb(verb: &str, file: &std::path::Path) -> Result<(), String> {
 /// Shows `file` in Explorer, selected (elsewhere: opens its folder).
 pub fn reveal(file: &std::path::Path) {
     #[cfg(windows)]
-    let shown = std::process::Command::new("explorer")
-        .arg(format!("/select,{}", file.display()))
-        .spawn()
-        .map(|_| ());
+    let shown = {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("explorer")
+            .raw_arg(select_arg(file))
+            .spawn()
+            .map(|_| ())
+    };
     #[cfg(not(windows))]
     let shown = file
         .parent()
@@ -156,6 +159,32 @@ pub fn reveal(file: &std::path::Path) {
     if let Err(e) = shown {
         eprintln!("Snapline: could not show {}: {e}", file.display());
     }
+}
+
+/// What to tell the user when `ShellExecuteW` fails with `code` (its result, 32 or less).
+#[must_use]
+#[cfg_attr(
+    not(windows),
+    allow(dead_code, reason = "used by shell_verb on Windows")
+)]
+pub fn shell_error(verb: &str, code: usize) -> String {
+    match code {
+        // SE_ERR_NOASSOC, SE_ERR_ASSOCINCOMPLETE
+        27 | 31 => format!(
+            "No app on this PC is set up to {verb} PNG images. Pick one in Settings → Apps → Default apps (for .png)."
+        ),
+        2 | 3 => format!("Windows could not find the screenshot file to {verb}."),
+        5 => format!("Windows did not allow Snapline to {verb} the file."),
+        _ => format!("Windows could not {verb} the file (error {code})."),
+    }
+}
+
+/// Explorer's argument to show `file` selected. Explorer wants the path in quotes after the comma, so the
+/// argument is passed as is (`raw_arg`), not quoted again as a whole.
+#[must_use]
+#[cfg_attr(not(windows), allow(dead_code, reason = "used by reveal on Windows"))]
+pub fn select_arg(file: &std::path::Path) -> String {
+    format!("/select,\"{}\"", file.display())
 }
 
 /// Windows' manual proxy for this user (Settings → Network & internet → Proxy → "Use a proxy server"), when it is
@@ -546,5 +575,27 @@ mod tests {
             "turned off in Task Manager"
         );
         assert!(!startup_approved(Some(&[7])));
+    }
+
+    // Phase 5c: "code 31" told the user nothing.
+    #[test]
+    fn shell_errors_say_what_to_do() {
+        let none = shell_error("print", 31);
+        assert!(
+            none.contains("Default apps") && !none.contains("31"),
+            "{none}"
+        );
+        assert!(shell_error("open", 2).contains("could not find"));
+        assert!(shell_error("open", 99).contains("error 99"));
+    }
+
+    // Phase 5c: Explorer did not select a file whose path has spaces.
+    #[test]
+    fn explorer_gets_the_path_in_quotes() {
+        let path = std::path::Path::new(r"C:\Users\A B\AppData\Local\Temp\Snapline\Shot 1.png");
+        assert_eq!(
+            select_arg(path),
+            r#"/select,"C:\Users\A B\AppData\Local\Temp\Snapline\Shot 1.png""#
+        );
     }
 }

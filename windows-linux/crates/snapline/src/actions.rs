@@ -55,13 +55,17 @@ pub fn run(command: Command, image: &Pixmap, settings: &Settings) -> Result<Opti
         Command::Edit => {
             let file = temp_png(&png(image)?, &name)?;
             edit(&file, settings)
-                .map_err(|e| format!("Snapline could not open the editor: {e}"))?;
+                .map_err(|e| {
+                    format!(
+                        "Snapline could not open an editor. {e} You can also choose one in Snapline settings → General."
+                    )
+                })?;
             Ok(None)
         }
         Command::Print => {
             let file = temp_png(&png(image)?, &name)?;
             platform::shell_verb("print", &file)
-                .map_err(|e| format!("Snapline could not print: {e}"))?;
+                .map_err(|e| format!("Snapline could not print. {e}"))?;
             Ok(None) // Windows shows its own print dialog
         }
         // Uploads, Share and Copy Text are handled by the app itself; Cancel has nothing to do.
@@ -79,7 +83,8 @@ pub fn temp_png(png: &[u8], name: &str) -> Result<PathBuf, String> {
     let dir = std::env::temp_dir().join("Snapline");
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Snapline could not write a temporary file: {e}"))?;
-    let path = dir.join(name);
+    // Names change once a second, so Print then Edit in the same second must not share a file.
+    let path = naming::unique_file_path(&dir, name, Path::exists);
     std::fs::write(&path, png)
         .map_err(|e| format!("Snapline could not write a temporary file: {e}"))?;
     Ok(path)
@@ -196,6 +201,18 @@ mod tests {
         assert!(path.starts_with(std::env::temp_dir().join("Snapline")));
         assert_eq!(std::fs::read(&path).unwrap(), b"png bytes");
         std::fs::remove_file(path).unwrap();
+    }
+
+    // Phase 5c: names change once a second, so Print then Edit in the same second wrote over the same file.
+    #[test]
+    fn temp_files_never_collide() {
+        let name = format!("Snapline collide {}.png", std::process::id());
+        let first = temp_png(b"one", &name).unwrap();
+        let second = temp_png(b"two", &name).unwrap();
+        assert_ne!(first, second);
+        assert_eq!(std::fs::read(&first).unwrap(), b"one");
+        std::fs::remove_file(first).unwrap();
+        std::fs::remove_file(second).unwrap();
     }
 
     #[test]
