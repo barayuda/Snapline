@@ -6,6 +6,11 @@ use std::os::unix::net::UnixDatagram;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
+use snapline_overlay::Rect;
+use x11rb::connection::Connection;
+use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, InputFocus};
+use x11rb::rust_connection::RustConnection;
+
 /// Said on Wayland: 6a supports X11 sessions only.
 pub const WAYLAND: &str = "Snapline for Linux needs an X11 session for now; Wayland support is coming. Log out, \
      choose an X11 or Xorg session at the login screen (for example \"Ubuntu on Xorg\"), and start Snapline again.";
@@ -107,12 +112,151 @@ pub fn announce_at(path: &Path) {
     }
 }
 
+/// A connection to the X server and its root window.
+fn x11() -> Option<(RustConnection, u32)> {
+    let (conn, screen) = x11rb::connect(None).ok()?;
+    let root = conn.setup().roots.get(screen)?.root;
+    Some((conn, root))
+}
+
+fn atom(conn: &RustConnection, name: &str) -> Option<u32> {
+    Some(
+        conn.intern_atom(false, name.as_bytes())
+            .ok()?
+            .reply()
+            .ok()?
+            .atom,
+    )
+}
+
+pub fn beep() {
+    if let Some((conn, _)) = x11() {
+        let _ = conn.bell(0);
+        let _ = conn.flush();
+    }
+}
+
+pub fn cursor_position() -> Option<(i32, i32)> {
+    let (conn, root) = x11()?;
+    let pointer = conn.query_pointer(root).ok()?.reply().ok()?;
+    Some((pointer.root_x.into(), pointer.root_y.into()))
+}
+
+/// The part of `monitor` inside `work`, or `None` when they do not overlap.
+#[must_use]
+pub fn clip(monitor: Rect, work: Rect) -> Option<Rect> {
+    let x = monitor.x.max(work.x);
+    let y = monitor.y.max(work.y);
+    let right = (monitor.x + monitor.width).min(work.x + work.width);
+    let bottom = (monitor.y + monitor.height).min(work.y + work.height);
+    (right > x && bottom > y).then(|| Rect::new(x, y, right - x, bottom - y))
+}
+
+/// `_NET_WORKAREA` of the current desktop: the screen without panels, as the window manager reports it.
+fn net_workarea(conn: &RustConnection, root: u32) -> Option<Rect> {
+    let current = conn
+        .get_property(
+            false,
+            root,
+            atom(conn, "_NET_CURRENT_DESKTOP")?,
+            AtomEnum::CARDINAL,
+            0,
+            1,
+        )
+        .ok()?
+        .reply()
+        .ok()?
+        .value32()?
+        .next()
+        .unwrap_or(0);
+    let areas: Vec<u32> = conn
+        .get_property(
+            false,
+            root,
+            atom(conn, "_NET_WORKAREA")?,
+            AtomEnum::CARDINAL,
+            0,
+            1024,
+        )
+        .ok()?
+        .reply()
+        .ok()?
+        .value32()?
+        .collect();
+    let boxes = areas.as_chunks::<4>().0;
+    let a = boxes.get(current as usize).or_else(|| boxes.first())?;
+    Some(Rect::new(
+        f64::from(a[0]),
+        f64::from(a[1]),
+        f64::from(a[2]),
+        f64::from(a[3]),
+    ))
+}
+
+/// The usable part of the monitor under `(x, y)`, in physical pixels; `None` without a window manager.
+pub fn work_area(x: i32, y: i32) -> Option<Rect> {
+    let monitor = xcap::Monitor::all().ok()?.into_iter().find_map(|m| {
+        let (mx, my) = (m.x().ok()?, m.y().ok()?);
+        let (mw, mh) = (m.width().ok()?, m.height().ok()?);
+        let inside = x >= mx
+            && y >= my
+            && i64::from(x) < i64::from(mx) + i64::from(mw)
+            && i64::from(y) < i64::from(my) + i64::from(mh);
+        inside.then(|| Rect::new(f64::from(mx), f64::from(my), f64::from(mw), f64::from(mh)))
+    })?;
+    let (conn, root) = x11()?;
+    // ponytail: _NET_WORKAREA is one box for all monitors, so a panel on another monitor only can be missed.
+    clip(monitor, net_workarea(&conn, root)?)
+}
+
+/// The X11 window id of `window`.
+fn xid(window: &winit::window::Window) -> Option<u32> {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    match window.window_handle().ok()?.as_raw() {
+        RawWindowHandle::Xlib(h) => u32::try_from(h.window).ok(),
+        RawWindowHandle::Xcb(h) => Some(h.window.get()),
+        _ => None,
+    }
+}
+
+/// Gives `window` the keyboard (Escape and the shortcuts must reach the overlay at once).
+pub fn take_focus(window: &winit::window::Window) {
+    if let (Some((conn, _)), Some(id)) = (x11(), xid(window)) {
+        let _ = conn.set_input_focus(InputFocus::PARENT, id, x11rb::CURRENT_TIME);
+        let _ = conn.flush();
+    }
+}
+
+/// Popups are override-redirect on X11 (`popup_window.rs`): no window manager focuses them or lists them.
+pub fn never_activate(_window: &winit::window::Window) {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn scratch(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("snapline-{name}-{}", std::process::id()))
+    }
+
+    #[test]
+    fn the_work_area_is_the_monitor_without_the_panels() {
+        let monitor = Rect::new(1920.0, 0.0, 2560.0, 1440.0);
+        // _NET_WORKAREA spans every monitor: here a 48-pixel panel at the bottom of a 4480 × 1440 desktop.
+        let work = Rect::new(0.0, 0.0, 4480.0, 1392.0);
+        assert_eq!(
+            clip(monitor, work),
+            Some(Rect::new(1920.0, 0.0, 2560.0, 1392.0))
+        );
+        assert_eq!(clip(monitor, Rect::new(0.0, 0.0, 1920.0, 1080.0)), None);
+    }
+
+    #[test]
+    #[ignore = "needs an X server: CI runs it under xvfb-run"]
+    fn x11_answers_for_the_pointer_and_the_bell() {
+        assert!(cursor_position().is_some());
+        beep();
+        // Xvfb has no window manager, so no _NET_WORKAREA: the popup falls back to the whole monitor.
+        assert_eq!(work_area(0, 0), None);
     }
 
     #[test]

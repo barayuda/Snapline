@@ -39,6 +39,12 @@ impl PopupWindow {
             use winit::platform::windows::WindowAttributesExtWindows;
             attributes.with_skip_taskbar(true)
         };
+        // X11: override-redirect, so no window manager focuses it or lists it in the taskbar.
+        #[cfg(target_os = "linux")]
+        let attributes = {
+            use winit::platform::x11::WindowAttributesExtX11;
+            attributes.with_override_redirect(true)
+        };
         let window = Rc::new(
             event_loop
                 .create_window(attributes)

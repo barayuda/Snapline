@@ -36,6 +36,19 @@ impl OverlayWindow {
             use winit::platform::windows::WindowAttributesExtWindows;
             attributes.with_skip_taskbar(true)
         };
+        // X11: fullscreen on the monitor it captured, so it covers the panels and the window manager gives it the
+        // keyboard. (Override-redirect, which keeps a window out of the taskbar, gets no keyboard: Escape and Ctrl+C
+        // were lost in the Xfce check. Covering the panels hides any taskbar entry anyway.)
+        #[cfg(target_os = "linux")]
+        let attributes = {
+            let monitors: Vec<_> = event_loop.available_monitors().collect();
+            let corners: Vec<(i32, i32)> = monitors
+                .iter()
+                .map(|m| (m.position().x, m.position().y))
+                .collect();
+            let monitor = index_at(&corners, screen.x, screen.y).map(|i| monitors[i].clone());
+            attributes.with_fullscreen(Some(winit::window::Fullscreen::Borderless(monitor)))
+        };
         let window = Rc::new(
             event_loop
                 .create_window(attributes)
@@ -83,5 +96,29 @@ impl OverlayWindow {
                 | u32::from(src.blue());
         }
         buffer.present().map_err(|e| e.to_string())
+    }
+}
+
+/// Which of the monitors (top-left corners) starts at `(x, y)`, where a screen's capture starts.
+#[must_use]
+#[cfg_attr(
+    not(target_os = "linux"),
+    allow(dead_code, reason = "only X11 places the overlay by monitor")
+)]
+pub fn index_at(monitors: &[(i32, i32)], x: i32, y: i32) -> Option<usize> {
+    monitors.iter().position(|&m| m == (x, y))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Review Focus 1: monitors of different sizes, one left of the primary.
+    #[test]
+    fn overlay_goes_on_the_monitor_it_captured() {
+        let monitors = [(0, 0), (-1280, 120), (2560, 0)];
+        assert_eq!(index_at(&monitors, -1280, 120), Some(1));
+        assert_eq!(index_at(&monitors, 2560, 0), Some(2));
+        assert_eq!(index_at(&monitors, 100, 100), None);
     }
 }

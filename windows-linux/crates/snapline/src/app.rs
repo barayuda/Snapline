@@ -326,6 +326,8 @@ impl App {
             w.window.set_cursor(CursorIcon::Crosshair);
         }
         cap.windows[cap.session.focused].window.focus_window();
+        #[cfg(target_os = "linux")]
+        platform::take_focus(&cap.windows[cap.session.focused].window);
         self.capture = Some(cap);
     }
 
@@ -417,7 +419,7 @@ impl App {
         let (state, close_after) = match result {
             Ok(text) if !text.trim().is_empty() => {
                 let text = text.trim_end();
-                match copy_text(text) {
+                match actions::copy_text(text) {
                     Ok(()) => {
                         let detail = actions::text_copied_detail(text);
                         let title = "Text copied".into();
@@ -598,7 +600,7 @@ impl App {
                 self.google_token = token;
                 let link = result.page.to_string();
                 // The popup shows the link with a Copy button, so a clipboard failure is only logged.
-                if let Err(e) = copy_text(&link) {
+                if let Err(e) = actions::copy_text(&link) {
                     eprintln!("Snapline: could not use the clipboard: {e}");
                 }
                 if let Some(engine) = self.last_job.as_ref().and_then(|j| j.search) {
@@ -758,7 +760,7 @@ impl App {
         match button {
             PopupButton::Copy => {
                 if let Some(link) = link
-                    && let Err(e) = copy_text(&link)
+                    && let Err(e) = actions::copy_text(&link)
                 {
                     eprintln!("Snapline: could not use the clipboard: {e}");
                 }
@@ -781,13 +783,6 @@ impl App {
             PopupButton::Close => self.close_popup(),
         }
     }
-}
-
-/// Puts `text` on the clipboard; the error says why it could not.
-fn copy_text(text: &str) -> Result<(), String> {
-    arboard::Clipboard::new()
-        .and_then(|mut c| c.set_text(text.to_owned()))
-        .map_err(|e| e.to_string())
 }
 
 fn cursor_icon(kind: CursorKind) -> CursorIcon {

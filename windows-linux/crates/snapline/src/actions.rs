@@ -8,6 +8,7 @@ use snapline_overlay::session::Command;
 use snapline_overlay::tiny_skia::Pixmap;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
 
 /// What a finished action did, for the confirmation popup.
 #[derive(Debug, PartialEq, Eq)]
@@ -123,13 +124,34 @@ fn png(image: &Pixmap) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("Snapline could not make the PNG: {e}"))
 }
 
+/// Runs `f` on the app's clipboard. On X11 a copy is served by the app that made it and is gone once its last
+/// `Clipboard` is dropped (unless a clipboard manager takes it over), so one stays open for the life of the app.
+fn with_clipboard<T>(
+    f: impl FnOnce(&mut arboard::Clipboard) -> Result<T, arboard::Error>,
+) -> Result<T, arboard::Error> {
+    static KEPT: Mutex<Option<arboard::Clipboard>> = Mutex::new(None);
+    let mut kept = KEPT.lock().unwrap_or_else(PoisonError::into_inner);
+    let clipboard = match kept.as_mut() {
+        Some(clipboard) => clipboard,
+        None => kept.insert(arboard::Clipboard::new()?),
+    };
+    f(clipboard)
+}
+
 /// The screenshot is opaque, so tiny-skia's premultiplied bytes are already plain RGBA.
 fn copy(image: &Pixmap) -> Result<(), arboard::Error> {
-    arboard::Clipboard::new()?.set_image(arboard::ImageData {
-        width: image.width() as usize,
-        height: image.height() as usize,
-        bytes: Cow::Borrowed(image.data()),
+    with_clipboard(|c| {
+        c.set_image(arboard::ImageData {
+            width: image.width() as usize,
+            height: image.height() as usize,
+            bytes: Cow::Borrowed(image.data()),
+        })
     })
+}
+
+/// Puts `text` on the clipboard (Copy Text, upload links); the error says why it could not.
+pub fn copy_text(text: &str) -> Result<(), String> {
+    with_clipboard(|c| c.set_text(text.to_owned())).map_err(|e| e.to_string())
 }
 
 /// Writes `png` into `dir` as `name`, adding " 2", " 3"… instead of overwriting.
@@ -233,6 +255,23 @@ mod tests {
         };
         assert_eq!(editor_to_use(&settings), Some(here));
         assert_eq!(editor_to_use(&Settings::default()), None);
+    }
+
+    // Found in the Xfce check: on X11 the copy lived only as long as the `Clipboard` that made it, so Copy and
+    // Copy Text put nothing on the clipboard.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "needs an X server: CI runs it under xvfb-run"]
+    fn linux_copies_stay_on_the_clipboard_after_the_call() {
+        let image = Pixmap::new(4, 3).unwrap();
+        copy(&image).unwrap();
+        let pasted = arboard::Clipboard::new().unwrap().get_image().unwrap();
+        assert_eq!((pasted.width, pasted.height), (4, 3));
+        copy_text("4111 1111").unwrap();
+        assert_eq!(
+            arboard::Clipboard::new().unwrap().get_text().unwrap(),
+            "4111 1111"
+        );
     }
 
     #[test]

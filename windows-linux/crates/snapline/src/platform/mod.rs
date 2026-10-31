@@ -4,7 +4,12 @@
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
-pub use linux::{announce_settings_changed, claim, session_problem, watch_settings};
+pub use linux::take_focus;
+#[cfg(target_os = "linux")]
+pub use linux::{
+    announce_settings_changed, beep, claim, cursor_position, never_activate, session_problem,
+    watch_settings, work_area,
+};
 
 /// Why Snapline cannot run in this session; other systems always can.
 #[cfg(not(target_os = "linux"))]
@@ -46,7 +51,7 @@ pub fn beep() {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn beep() {}
 
 /// The pointer position in physical screen pixels.
@@ -59,7 +64,7 @@ pub fn cursor_position() -> Option<(i32, i32)> {
     (unsafe { GetCursorPos(&raw mut p) } != 0).then_some((p.x, p.y))
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn cursor_position() -> Option<(i32, i32)> {
     None
 }
@@ -115,7 +120,7 @@ pub fn work_area(x: i32, y: i32) -> Option<snapline_overlay::Rect> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn work_area(_x: i32, _y: i32) -> Option<snapline_overlay::Rect> {
     None // the caller falls back to the monitor's full area
 }
@@ -521,6 +526,7 @@ pub fn open_settings() {
 }
 
 /// Keeps a popup from ever taking the focus or showing in Alt+Tab (`with_active(false)` covers only the first show).
+#[cfg(not(target_os = "linux"))]
 pub fn never_activate(window: &winit::window::Window) {
     #[cfg(windows)]
     {
