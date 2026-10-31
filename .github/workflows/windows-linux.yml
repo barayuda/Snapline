@@ -58,22 +58,51 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./installer/package.ps1 -Version ((cargo pkgid -p snapline) -replace '.*[#@]', '')
-      - name: Install, check and uninstall
+      - name: Install, upgrade, check and uninstall
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $setup = Get-ChildItem target\dist\Snapline-Setup-*.exe | Select-Object -First 1
-          Start-Process $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=startup' -Wait
+          $setup = (Get-ChildItem target\dist\Snapline-Setup-*.exe | Select-Object -First 1).FullName
+          $quiet = '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
+          $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+          $approved = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run'
           $exe = "$env:LOCALAPPDATA\Programs\Snapline\snapline.exe"
+          function Run-Setup($file, $arguments, $what) {
+            $p = Start-Process $file -ArgumentList $arguments -Wait -PassThru
+            if ($p.ExitCode) { throw "$what exited with code $($p.ExitCode)" }
+          }
+          function Start-Snapline {
+            Start-Process $exe; Start-Sleep -Seconds 3
+            if (-not (Get-Process snapline -ErrorAction SilentlyContinue)) { throw "Snapline did not start" }
+          }
+
+          Run-Setup $setup ($quiet + '/TASKS=startup') 'install'
           if (-not (Test-Path $exe)) { throw "not installed" }
-          $run = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run').Snapline
-          if ($run -ne "`"$exe`"") { throw "Run value is '$run'" }
-          $uninstall = "$env:LOCALAPPDATA\Programs\Snapline\unins000.exe"
-          Start-Process $uninstall -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
-          Start-Sleep -Seconds 2
+          if ((Get-ItemProperty $run).Snapline -ne "`"$exe`"") { throw "Run value is '$((Get-ItemProperty $run).Snapline)'" }
+
+          # Review finding: an upgrade closes a running Snapline itself, and keeps "launch at sign-in" off once
+          # the user turned it off in Snapline.
+          Remove-ItemProperty $run -Name Snapline
+          Start-Snapline
+          Run-Setup $setup $quiet 'upgrade over a running Snapline'
+          if ((Get-ItemProperty $run).Snapline) { throw "the upgrade turned launch at sign-in back on" }
+          if (@(Get-Process snapline -ErrorAction SilentlyContinue).Count -gt 1) { throw "two Snaplines run" }
+
+          # Review finding: uninstall removes a sign-in entry the app wrote, Task Manager's switch, and a running Snapline.
+          Set-ItemProperty $run -Name Snapline -Value "`"$exe`""
+          New-Item $approved -Force | Out-Null
+          Set-ItemProperty $approved -Name Snapline -Value ([byte[]](3,0,0,0,0,0,0,0,0,0,0,0)) -Type Binary
+          Start-Snapline
+          Run-Setup "$env:LOCALAPPDATA\Programs\Snapline\unins000.exe" $quiet 'uninstall'
+          $deadline = (Get-Date).AddSeconds(30)
+          while ((Test-Path $exe) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
           if (Test-Path $exe) { throw "still installed" }
-          if ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run').Snapline) { throw "Run value left" }
-          "install, sign-in entry and uninstall: ok"
+          if ((Get-ItemProperty $run).Snapline) { throw "Run value left" }
+          if ((Get-ItemProperty $approved -ErrorAction SilentlyContinue).Snapline) { throw "StartupApproved value left" }
+
+          # Review finding: SHA256SUMS.txt must have Unix line endings, or `sha256sum -c` fails on Mac and Linux.
+          if ([IO.File]::ReadAllBytes("$PWD\target\dist\SHA256SUMS.txt") -contains 13) { throw "SHA256SUMS.txt has CR line endings" }
+          "install, upgrade over a running Snapline, sign-in entries, uninstall, checksums: ok"
       - uses: actions/upload-artifact@v7
         if: runner.os == 'Windows'
         with:
