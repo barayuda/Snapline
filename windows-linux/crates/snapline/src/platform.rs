@@ -279,6 +279,34 @@ mod run_key {
 )]
 pub const SETTINGS_CHANGED: &str = "Local\\dev.barayuda.snapline.settings-changed";
 
+/// Calls `notify` each time the settings window saves a change (it sets `SETTINGS_CHANGED`). Windows only.
+pub fn watch_settings(notify: impl Fn() + Send + 'static) {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
+        use windows_sys::Win32::System::Threading::{CreateEventW, INFINITE, WaitForSingleObject};
+        let name: Vec<u16> = SETTINGS_CHANGED.encode_utf16().chain(Some(0)).collect();
+        // SAFETY: `name` is NUL-terminated. Auto-reset, so each save wakes the thread once; never closed, as it
+        // lives as long as the app.
+        let event = unsafe { CreateEventW(std::ptr::null(), 0, 0, name.as_ptr()) };
+        if event.is_null() {
+            eprintln!("Snapline: settings changes will apply after a restart");
+            return;
+        }
+        // A HANDLE is a raw pointer, which is not Send; the thread only waits on it.
+        let event = event.expose_provenance();
+        std::thread::spawn(move || {
+            let event = std::ptr::with_exposed_provenance_mut(event);
+            // SAFETY: the event stays open for the life of the app.
+            while unsafe { WaitForSingleObject(event, INFINITE) } == WAIT_OBJECT_0 {
+                notify();
+            }
+        });
+    }
+    #[cfg(not(windows))]
+    let _ = notify;
+}
+
 /// Tells the tray app that `settings.toml` changed. Nothing happens when the tray app is not running.
 pub fn announce_settings_changed() {
     #[cfg(windows)]

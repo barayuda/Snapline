@@ -52,6 +52,8 @@ pub enum UserEvent {
     },
     /// Copy Text finished: the text (maybe empty), or a sentence saying why it could not run.
     TextRead(Result<String, String>),
+    /// The settings window saved a change.
+    SettingsChanged,
 }
 
 struct Capture {
@@ -74,6 +76,8 @@ pub struct App {
     /// Why some shortcuts did not register, shown from the tray menu.
     shortcut_note: Option<String>,
     hotkeys: Option<GlobalHotKeyManager>,
+    /// The shortcuts registered now, to drop them when the settings change.
+    registered: Vec<HotKey>,
     capture: Option<Capture>,
     started: bool,
     secrets: Option<Keyring>,
@@ -105,6 +109,7 @@ impl App {
             why: MenuId::new("why"),
             shortcut_note: None,
             hotkeys: None,
+            registered: Vec::new(),
             capture: None,
             started: false,
             secrets: None,
@@ -160,6 +165,11 @@ impl App {
             }
         }));
 
+        let proxy = self.proxy.clone();
+        platform::watch_settings(move || {
+            let _ = proxy.send_event(UserEvent::SettingsChanged);
+        });
+
         let labels = self.register_hotkeys();
         match self.build_tray(&labels) {
             Ok(tray) => self.tray = Some(tray),
@@ -169,32 +179,63 @@ impl App {
 
     /// Registers every configured shortcut it can, and returns the labels of those that worked.
     /// When none work, says so at once; when some fail, the tray menu offers the explanation.
+    /// Registers the shortcuts in `self.settings`, first dropping any registered before (a settings change),
+    /// and returns the labels of those that work.
     fn register_hotkeys(&mut self) -> Vec<String> {
-        let manager = match GlobalHotKeyManager::new() {
-            Ok(m) => m,
-            Err(e) => {
-                show_error(&format!(
-                    "Snapline could not set up its capture shortcuts: {e}"
-                ));
-                return Vec::new();
+        if self.hotkeys.is_none() {
+            match GlobalHotKeyManager::new() {
+                Ok(m) => self.hotkeys = Some(m),
+                Err(e) => {
+                    show_error(&format!(
+                        "Snapline could not set up its capture shortcuts: {e}"
+                    ));
+                    return Vec::new();
+                }
             }
+        }
+        let Some(manager) = &self.hotkeys else {
+            return Vec::new();
         };
-        let (working, failed): (Vec<String>, Vec<String>) =
-            self.settings.hotkeys.iter().cloned().partition(|name| {
-                name.parse::<HotKey>()
-                    .is_ok_and(|h| manager.register(h).is_ok())
-            });
+        let _ = manager.unregister_all(&self.registered);
+        let mut registered = Vec::new();
+        let (working, failed) = settings::split_shortcuts(&self.settings.hotkeys, |name| {
+            let Ok(key) = name.parse::<HotKey>() else {
+                return false;
+            };
+            let ok = manager.register(key).is_ok();
+            if ok {
+                registered.push(key);
+            }
+            ok
+        });
+        self.registered = registered;
         self.shortcut_note = settings::shortcut_note(&failed, &working);
         if working.is_empty()
             && let Some(note) = &self.shortcut_note
         {
             show_error(note);
         }
-        self.hotkeys = Some(manager);
         working
             .iter()
             .map(|n| settings::shortcut_label(n))
             .collect()
+    }
+
+    /// The settings window saved a change: re-read the file, register the shortcuts again and rebuild the tray
+    /// icon, so the menu labels and the tray click follow. A file that cannot be read changes nothing.
+    fn reload_settings(&mut self) {
+        let Some(path) = Settings::path() else { return };
+        let (settings, problem) = Settings::load(&path);
+        if problem.is_some() {
+            return;
+        }
+        self.settings = settings;
+        let labels = self.register_hotkeys();
+        self.tray = None;
+        match self.build_tray(&labels) {
+            Ok(tray) => self.tray = Some(tray),
+            Err(e) => show_error(&format!("Snapline could not add its tray icon: {e}")),
+        }
     }
 
     fn build_tray(&self, labels: &[String]) -> Result<TrayIcon, String> {
@@ -890,6 +931,7 @@ impl ApplicationHandler<UserEvent> for App {
                 self.apply(event_loop, focused, effect);
             }
             UserEvent::TextRead(result) => self.text_read(result, event_loop),
+            UserEvent::SettingsChanged => self.reload_settings(),
             UserEvent::Menu(id) if id == self.why => {
                 if let Some(note) = &self.shortcut_note {
                     platform::show_info(note);

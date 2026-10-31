@@ -210,6 +210,15 @@ pub fn shortcut_label(name: &str) -> String {
         .replace("Key", "")
 }
 
+/// Splits `names` into the shortcuts `try_register` took and those it could not (taken by another app, or not a
+/// shortcut at all), in order.
+pub fn split_shortcuts(
+    names: &[String],
+    mut try_register: impl FnMut(&str) -> bool,
+) -> (Vec<String>, Vec<String>) {
+    names.iter().cloned().partition(|n| try_register(n))
+}
+
 /// What to tell the user about capture shortcuts that could not be registered (`None` when all worked).
 /// `failed` and `working` hold shortcut names as in the settings file.
 #[must_use]
@@ -473,5 +482,24 @@ mod tests {
         assert_eq!(s.hotkeys, ["Ctrl+Alt+S"]);
         s.set_shortcuts(None, true);
         assert_eq!(s.hotkeys, ["PrintScreen"]);
+    }
+
+    // Review Focus 2.
+    #[test]
+    fn reload_keeps_working_shortcuts_and_reports_taken_ones() {
+        let names = vec!["PrintScreen".to_owned(), "Ctrl+Alt+S".to_owned()];
+        let (working, failed) = split_shortcuts(&names, |n| n != "PrintScreen");
+        assert_eq!(
+            (working, failed.clone()),
+            (
+                vec!["Ctrl+Alt+S".to_owned()],
+                vec!["PrintScreen".to_owned()]
+            )
+        );
+        assert!(
+            shortcut_note(&failed, &["Ctrl+Alt+S".to_owned()])
+                .unwrap()
+                .contains("PrtScn")
+        );
     }
 }
