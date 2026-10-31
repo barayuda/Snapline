@@ -12,7 +12,7 @@ mod capture;
 mod icon;
 mod platform;
 mod popup_window;
-#[cfg_attr(not(test), allow(dead_code, reason = "wired to captures in Task 6"))]
+#[allow(dead_code, reason = "wired to captures in Task 6")]
 mod recognize;
 mod secrets;
 mod settings;
@@ -20,7 +20,7 @@ mod upload_job;
 mod upload_settings;
 mod window;
 #[cfg(windows)]
-#[cfg_attr(not(test), allow(dead_code, reason = "wired to captures in Task 6"))]
+#[allow(dead_code, reason = "wired to captures in Task 6")]
 mod windows_ocr;
 
 use winit::event_loop::{ControlFlow, EventLoop};
