@@ -142,6 +142,22 @@ pub fn shell_verb(verb: &str, file: &std::path::Path) -> Result<(), String> {
     }
 }
 
+/// Shows `file` in Explorer, selected (elsewhere: opens its folder).
+pub fn reveal(file: &std::path::Path) {
+    #[cfg(windows)]
+    let shown = std::process::Command::new("explorer")
+        .arg(format!("/select,{}", file.display()))
+        .spawn()
+        .map(|_| ());
+    #[cfg(not(windows))]
+    let shown = file
+        .parent()
+        .map_or(Ok(()), |dir| open::that(dir).map_err(std::io::Error::other));
+    if let Err(e) = shown {
+        eprintln!("Snapline: could not show {}: {e}", file.display());
+    }
+}
+
 /// Opens the settings window: this program again, as a second process.
 pub fn open_settings() {
     match std::env::current_exe() {

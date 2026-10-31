@@ -15,6 +15,7 @@ mod popup_window;
 mod recognize;
 mod secrets;
 mod settings;
+mod share;
 mod upload_job;
 mod upload_settings;
 mod window;

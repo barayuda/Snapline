@@ -8,6 +8,7 @@ use crate::popup_window::PopupWindow;
 use crate::recognize;
 use crate::secrets::Keyring;
 use crate::settings::{self, Settings, TrayClick};
+use crate::share;
 use crate::upload_job::{self, CachedToken, Job, Outcome};
 use crate::window::OverlayWindow;
 use crate::worker::OnPanic;
@@ -88,6 +89,8 @@ pub struct App {
     uploading: bool,
     google_token: Option<CachedToken>,
     captures: u64,
+    /// Share's helper window, while Share may still be open.
+    share: Option<share::Open>,
 }
 
 impl App {
@@ -115,6 +118,7 @@ impl App {
             uploading: false,
             google_token: None,
             captures: 0,
+            share: None,
         }
     }
 
@@ -235,6 +239,7 @@ impl App {
         if self.capture.is_some() {
             return; // the shortcut pressed again during a capture does nothing
         }
+        self.share = None; // a new capture closes Share's helper window
         let screens = match capture::capture_all() {
             Ok(s) if !s.is_empty() => s,
             Ok(_) => return,
@@ -351,6 +356,29 @@ impl App {
         });
     }
 
+    /// Share: a temp PNG handed to the Windows Share window; Explorer with the file selected when Share is missing.
+    fn share(&mut self, image: &snapline_overlay::tiny_skia::Pixmap, event_loop: &ActiveEventLoop) {
+        let name = naming::file_name(Local::now());
+        let file = match image
+            .encode_png()
+            .map_err(|e| e.to_string())
+            .and_then(|png| actions::temp_png(&png, &name))
+        {
+            Ok(file) => file,
+            Err(e) => return show_error(&e),
+        };
+        self.share = None; // one Share at a time
+        match share::open(event_loop, &file, &name) {
+            Ok(open) => self.share = Some(open),
+            Err(why) => {
+                platform::reveal(&file);
+                let title = "Share is not available".into();
+                let detail = actions::share_unavailable(&why);
+                self.show_popup(event_loop, PopupState::Problem { title, detail }, None);
+            }
+        }
+    }
+
     fn text_read(&mut self, result: Result<String, String>, event_loop: &ActiveEventLoop) {
         let (state, close_after) = match result {
             Ok(text) if !text.trim().is_empty() => {
@@ -439,6 +467,7 @@ impl App {
                 }
             }
             Command::CopyText => self.read_text(image),
+            Command::Share => self.share(&image, event_loop),
             _ => match actions::run(command, &image, &settings) {
                 Ok(Some(done)) => self.confirm(done, event_loop),
                 Ok(None) => {}
@@ -797,12 +826,19 @@ impl ApplicationHandler<UserEvent> for App {
         if self.popup_close_at.is_some_and(|t| t <= now) && !self.popup_hovered {
             self.close_popup();
         }
+        if self.share.as_ref().is_some_and(|s| s.until <= now) {
+            self.share = None;
+        }
         if self.icon_reset_at.is_some_and(|t| t <= now) {
             self.icon_reset_at = None;
             self.set_tray(TrayState::Normal);
         }
         let close = self.popup_close_at.filter(|_| !self.popup_hovered);
-        let next = [close, self.icon_reset_at].into_iter().flatten().min();
+        let share = self.share.as_ref().map(|s| s.until);
+        let next = [close, self.icon_reset_at, share]
+            .into_iter()
+            .flatten()
+            .min();
         event_loop.set_control_flow(next.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
     }
 

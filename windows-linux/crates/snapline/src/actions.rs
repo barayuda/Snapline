@@ -84,6 +84,15 @@ pub fn temp_png(png: &[u8], name: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// What to say when Share cannot open: the screenshot is shown in Explorer instead.
+#[must_use]
+pub fn share_unavailable(why: &str) -> String {
+    format!(
+        "Windows could not open Share here ({why}). The screenshot is selected in Explorer, so you can drag it \
+         where you need it."
+    )
+}
+
 /// The editor chosen in Settings, if it still exists; `None` means the Windows default.
 #[must_use]
 pub fn editor_to_use(settings: &Settings) -> Option<PathBuf> {
@@ -206,5 +215,11 @@ mod tests {
         };
         assert_eq!(editor_to_use(&settings), Some(here));
         assert_eq!(editor_to_use(&Settings::default()), None);
+    }
+
+    #[test]
+    fn share_fallback_says_where_the_file_is() {
+        let text = share_unavailable("class not registered");
+        assert!(text.contains("Explorer") && text.contains("class not registered"));
     }
 }
