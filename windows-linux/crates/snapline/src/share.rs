@@ -52,12 +52,12 @@ pub fn open(event_loop: &ActiveEventLoop, file: &Path, title: &str) -> Result<Op
 mod windows_share {
     use std::path::Path;
     use windows::ApplicationModel::DataTransfer::{DataRequestedEventArgs, DataTransferManager};
-    use windows::Foundation::Collections::IIterable;
     use windows::Foundation::TypedEventHandler;
     use windows::Storage::{IStorageItem, StorageFile};
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::Shell::IDataTransferManagerInterop;
     use windows::core::{AgileReference, HSTRING, Interface, Ref};
+    use windows_collections::IIterable;
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use winit::window::Window;
 

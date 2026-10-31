@@ -4193,6 +4193,7 @@ dependencies = [
  "tray-icon",
  "url",
  "windows",
+ "windows-collections",
  "windows-native-keyring-store",
  "windows-sys 0.61.2",
  "winit",
