@@ -1,4 +1,5 @@
-//! Text recognition and face detection on this PC: Windows OCR on Windows; elsewhere not yet (Linux: Phase 6).
+//! Text recognition and face detection on this PC: Windows OCR on Windows, Tesseract on Linux (no faces yet);
+//! elsewhere not yet.
 
 use snapline_overlay::Rect;
 use snapline_overlay::scan::{Line, Recognized};
@@ -56,10 +57,10 @@ pub trait Recognizer {
 /// # Errors
 /// The first step's error, when no step worked.
 #[cfg_attr(
-    not(windows),
+    not(any(windows, target_os = "linux")),
     allow(
         dead_code,
-        reason = "only the Windows recognizer reads two steps so far"
+        reason = "only the Windows and Linux recognizers read two steps so far"
     )
 )]
 pub fn merge(
@@ -88,10 +89,10 @@ pub fn merge(
     })
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 struct NotYet;
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 impl Recognizer for NotYet {
     fn recognize(&self, _image: &Pixmap, _text: bool, _faces: bool) -> Result<Reading, String> {
         Err("Text recognition is not available on this system yet.".into())
@@ -105,9 +106,30 @@ pub fn system() -> Box<dyn Recognizer> {
     {
         Box::new(crate::windows_ocr::WindowsOcr)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        Box::new(crate::tesseract_ocr::Tesseract)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         Box::new(NotYet)
+    }
+}
+
+/// One line for `snapline --version`: whether text recognition can run here.
+#[must_use]
+pub fn status() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        crate::tesseract_ocr::status()
+    }
+    #[cfg(windows)]
+    {
+        "Text recognition: Windows OCR".to_owned()
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        "Text recognition: not available on this system".to_owned()
     }
 }
 
@@ -159,7 +181,12 @@ mod tests {
         assert!(only_faces.problem.is_none());
     }
 
-    #[cfg(not(windows))]
+    #[test]
+    fn status_names_text_recognition() {
+        assert!(status().starts_with("Text recognition: "));
+    }
+
+    #[cfg(not(any(windows, target_os = "linux")))]
     #[test]
     fn other_systems_say_it_is_not_available_yet() {
         let image = Pixmap::new(10, 10).unwrap();

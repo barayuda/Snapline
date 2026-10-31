@@ -21,6 +21,8 @@ mod secrets;
 mod settings;
 mod share;
 mod shortcuts;
+#[cfg(target_os = "linux")]
+mod tesseract_ocr;
 mod tray;
 mod upload_job;
 mod upload_settings;
@@ -34,7 +36,11 @@ use winit::event_loop::{ControlFlow, EventLoop};
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "--version") {
-        return println!("Snapline {}", env!("CARGO_PKG_VERSION"));
+        return println!(
+            "Snapline {}\n{}",
+            env!("CARGO_PKG_VERSION"),
+            recognize::status()
+        );
     }
     #[cfg(target_os = "linux")]
     if let Some(text) = message::parse(&args) {

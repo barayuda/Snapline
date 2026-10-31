@@ -13,3 +13,6 @@ libgbm-dev
 libdbus-1-dev
 xvfb
 dbus-x11
+libtesseract-dev
+libleptonica-dev
+tesseract-ocr-eng
