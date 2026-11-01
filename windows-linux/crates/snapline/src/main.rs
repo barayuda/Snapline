@@ -63,7 +63,15 @@ fn main() {
         ));
         return;
     }
-    let event_loop = match EventLoop::<app::UserEvent>::with_user_event().build() {
+    #[cfg_attr(not(target_os = "linux"), allow(unused_mut))]
+    let mut builder = EventLoop::<app::UserEvent>::with_user_event();
+    // Wayland sessions too: Snapline places its overlay and popups, which only X11 (XWayland) allows.
+    #[cfg(target_os = "linux")]
+    {
+        use winit::platform::x11::EventLoopBuilderExtX11;
+        builder.with_x11();
+    }
+    let event_loop = match builder.build() {
         Ok(l) => l,
         Err(e) => return platform::show_error(&format!("Snapline could not start: {e}")),
     };

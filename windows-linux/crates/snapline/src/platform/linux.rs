@@ -12,9 +12,9 @@ use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, InputFocus};
 use x11rb::rust_connection::RustConnection;
 
-/// Said on Wayland: 6a supports X11 sessions only.
-pub const WAYLAND: &str = "Snapline for Linux needs an X11 session for now; Wayland support is coming. Log out, \
-     choose an X11 or Xorg session at the login screen (for example \"Ubuntu on Xorg\"), and start Snapline again.";
+/// Said in a Wayland session that has no `XWayland`: Snapline draws its windows through `XWayland`.
+pub const NO_XWAYLAND: &str = "Snapline needs XWayland in a Wayland session. Install the xwayland package (GNOME \
+     and KDE Plasma start it by themselves), or log in to an X11 session, then start Snapline again.";
 /// Said when there is no desktop at all.
 pub const NO_DISPLAY: &str =
     "Snapline needs a desktop session. Start it from your desktop, not from a text console.";
@@ -29,16 +29,18 @@ pub fn session_problem() -> Option<&'static str> {
 }
 
 /// `session_type` is `$XDG_SESSION_TYPE`; `wayland` and `x11` say whether `$WAYLAND_DISPLAY` and `$DISPLAY` are set.
+/// A Wayland session works when it has `XWayland` (`$DISPLAY`): the capture goes through the portal, the windows
+/// through `XWayland`.
 pub fn session_problem_for(
     session_type: Option<&OsStr>,
     wayland: bool,
     x11: bool,
 ) -> Option<&'static str> {
     let kind = session_type.and_then(OsStr::to_str).unwrap_or("");
-    if kind == "wayland" || (wayland && kind != "x11") {
-        Some(WAYLAND)
-    } else if x11 {
-        None
+    if x11 {
+        None // X11, or Wayland with XWayland: Snapline's windows go through X11 either way
+    } else if kind == "wayland" || wayland {
+        Some(NO_XWAYLAND)
     } else {
         Some(NO_DISPLAY)
     }
@@ -575,16 +577,17 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
 
-    // Review Focus 5: XWayland sees only X11 apps, so a capture on Wayland would come out black.
+    // Phase 6b: Wayland runs through XWayland; only a Wayland session without XWayland is refused.
     #[test]
-    fn wayland_and_console_sessions_are_refused() {
+    fn wayland_needs_xwayland() {
         let wayland = Some(OsStr::new("wayland"));
-        let x11 = Some(OsStr::new("x11"));
-        assert_eq!(session_problem_for(wayland, true, true), Some(WAYLAND));
-        assert_eq!(session_problem_for(None, true, false), Some(WAYLAND));
-        assert_eq!(session_problem_for(x11, false, true), None);
-        // A nested Wayland compositor inside an X11 session: Snapline still sees the X11 desktop.
-        assert_eq!(session_problem_for(x11, true, true), None);
+        assert_eq!(session_problem_for(wayland, true, true), None);
+        assert_eq!(session_problem_for(wayland, true, false), Some(NO_XWAYLAND));
+        assert_eq!(session_problem_for(None, true, false), Some(NO_XWAYLAND));
+        assert_eq!(
+            session_problem_for(Some(OsStr::new("x11")), false, true),
+            None
+        );
         assert_eq!(session_problem_for(None, false, false), Some(NO_DISPLAY));
         assert_eq!(
             session_problem_for(Some(OsStr::new("tty")), false, false),
