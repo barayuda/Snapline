@@ -16,6 +16,8 @@ mod linux_tray;
 mod message;
 mod platform;
 mod popup_window;
+#[cfg(target_os = "linux")]
+mod portal_shortcuts;
 mod recognize;
 mod secrets;
 mod settings;

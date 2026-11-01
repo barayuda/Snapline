@@ -41,6 +41,12 @@ pub enum UserEvent {
     Menu(MenuAction),
     /// A left click on the tray icon (a screenshot when the setting says so).
     TrayClicked,
+    /// Wayland: the desktop has no `GlobalShortcuts` portal, or refused it; the reason.
+    #[cfg_attr(
+        not(target_os = "linux"),
+        allow(dead_code, reason = "only Linux asks the portal")
+    )]
+    NoShortcutPortal(String),
     /// The desktop shows no tray icons.
     #[cfg_attr(
         not(target_os = "linux"),
@@ -86,6 +92,12 @@ pub struct App {
     /// The shortcuts that work now, by label.
     labels: Vec<String>,
     told_tray_missing: bool,
+    /// Wayland: the portal is asked once per run (the desktop then owns the shortcut).
+    #[cfg_attr(
+        not(target_os = "linux"),
+        allow(dead_code, reason = "only Linux asks the portal")
+    )]
+    asked_shortcut_portal: bool,
     /// Why some shortcuts did not register, shown from the tray menu.
     shortcut_note: Option<String>,
     hotkeys: Option<GlobalHotKeyManager>,
@@ -120,6 +132,7 @@ impl App {
             tray: None,
             labels: Vec::new(),
             told_tray_missing: false,
+            asked_shortcut_portal: false,
             shortcut_note: None,
             hotkeys: None,
             registered: Vec::new(),
@@ -186,6 +199,28 @@ impl App {
     /// Registers the shortcuts in `self.settings`, first dropping any registered before (a settings change),
     /// and returns the labels of those that work.
     fn register_hotkeys(&mut self) -> Vec<String> {
+        // Wayland: global-hotkey's X11 grab fires only while an XWayland window has focus, so the desktop's portal
+        // owns the shortcut (or the user binds `snapline --capture`).
+        if platform::is_wayland() {
+            #[cfg(target_os = "linux")]
+            if !self.asked_shortcut_portal {
+                self.asked_shortcut_portal = true;
+                let trigger = self
+                    .settings
+                    .hotkeys
+                    .first()
+                    .and_then(|h| crate::portal_shortcuts::xdg_trigger(h));
+                let (on_press, on_missing) = (self.proxy.clone(), self.proxy.clone());
+                crate::portal_shortcuts::start(
+                    trigger,
+                    move || drop(on_press.send_event(UserEvent::HotKey)),
+                    move |why| drop(on_missing.send_event(UserEvent::NoShortcutPortal(why))),
+                );
+            }
+            self.shortcut_note = None;
+            self.labels.clear();
+            return Vec::new();
+        }
         if self.hotkeys.is_none() {
             match GlobalHotKeyManager::new() {
                 Ok(m) => self.hotkeys = Some(m),
@@ -939,6 +974,16 @@ impl ApplicationHandler<UserEvent> for App {
             }
             UserEvent::TrayClicked if self.settings.tray_click == TrayClick::Capture => {
                 self.open_capture(event_loop);
+            }
+            UserEvent::NoShortcutPortal(why) => {
+                // Once, not at every login: the desktop will not change its mind between starts.
+                let told = Settings::path()
+                    .and_then(|p| p.parent().map(|d| d.join("wayland-shortcut-note")))
+                    .is_some_and(|marker| !settings::first_time(&marker));
+                if !told {
+                    let note = settings::wayland_shortcut_note(&why, &platform::capture_command());
+                    platform::show_info(&note);
+                }
             }
             UserEvent::TrayMissing if !self.told_tray_missing => {
                 self.told_tray_missing = true;

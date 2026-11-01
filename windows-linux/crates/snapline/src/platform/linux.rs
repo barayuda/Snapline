@@ -48,6 +48,12 @@ pub fn session_problem_for(
     }
 }
 
+/// A Wayland session (Snapline's own windows still go through `XWayland`).
+pub fn is_wayland() -> bool {
+    std::env::var_os("WAYLAND_DISPLAY").is_some()
+        || std::env::var_os("XDG_SESSION_TYPE").is_some_and(|t| t == "wayland")
+}
+
 /// The user's runtime folder (`$XDG_RUNTIME_DIR`, private to the user), or the temp folder.
 fn runtime_dir() -> PathBuf {
     runtime_dir_for(

@@ -5,7 +5,7 @@
 mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::{
-    announce_settings_changed, beep, claim, cursor_position, email, launch_at_login,
+    announce_settings_changed, beep, claim, cursor_position, email, is_wayland, launch_at_login,
     never_activate, reveal, send, session_problem, set_launch_at_login, shell_verb, watch,
     work_area,
 };
@@ -54,6 +54,12 @@ pub fn settings_command() -> String {
     command("--settings")
 }
 
+/// The command that takes a screenshot (a running Snapline takes it; otherwise Snapline starts and takes it).
+#[must_use]
+pub fn capture_command() -> String {
+    command("--capture")
+}
+
 /// Where Snapline keeps secrets, by the name users know.
 pub const SECRET_STORE: &str = if cfg!(windows) {
     "Credential Manager"
@@ -69,6 +75,13 @@ pub const TRAY_PLACE: &str = if cfg!(windows) {
 } else {
     "in the panel"
 };
+
+/// A Wayland session; other systems never are.
+#[cfg(not(target_os = "linux"))]
+#[must_use]
+pub fn is_wayland() -> bool {
+    false
+}
 
 /// Why Snapline cannot run in this session; other systems always can.
 #[cfg(not(target_os = "linux"))]

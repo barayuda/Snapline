@@ -227,6 +227,31 @@ const PRTSCN_HINT: &str = "\n\nOn Windows 11 this is usually the Snipping Tool. 
 const PRTSCN_HINT: &str = "\n\nOn Linux the desktop's own screenshot tool usually has PrtScn. To give PrtScn to \
      Snapline, remove that shortcut in your desktop's keyboard settings, then restart Snapline.";
 
+/// True the first time it is asked for `marker` (a file next to `settings.toml`), false after: for notes that should
+/// come once, not at every start. When the marker cannot be written, the note comes again next time.
+#[must_use]
+pub fn first_time(marker: &Path) -> bool {
+    if marker.exists() {
+        return false;
+    }
+    if let Some(dir) = marker.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(marker, b"");
+    true
+}
+
+/// Said once in a Wayland session when the desktop has no `GlobalShortcuts` portal (or refused it): bind `command`
+/// yourself.
+#[must_use]
+pub fn wayland_shortcut_note(why: &str, command: &str) -> String {
+    format!(
+        "Your desktop does not let Snapline set a capture shortcut ({why}). To take a screenshot with a key, add a \
+         custom shortcut in your desktop's keyboard settings that runs:\n\n{command}\n\nThe tray menu's Take \
+         Screenshot works too."
+    )
+}
+
 /// What to tell the user about capture shortcuts that could not be registered (`None` when all worked).
 /// `failed` and `working` hold shortcut names as in the settings file.
 #[must_use]
@@ -358,6 +383,31 @@ mod tests {
         let note = shortcut_note(&names(&["PrintScreen"]), &names(&["Ctrl+Shift+Digit1"])).unwrap();
         assert!(
             note.contains("keyboard settings") && !note.contains("Snipping Tool"),
+            "{note}"
+        );
+    }
+
+    // Phase 6b: on a desktop without the portal the note came at every login; it comes once.
+    #[test]
+    fn a_note_marked_as_told_is_not_told_again() {
+        let dir = std::env::temp_dir().join(format!("snapline-told-{}", std::process::id()));
+        let marker = dir.join("wayland-shortcut-note");
+        assert!(first_time(&marker));
+        assert!(!first_time(&marker));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    // Review Focus 3 (Phase 6b): a Wayland desktop without the GlobalShortcuts portal.
+    #[test]
+    fn wayland_without_the_portal_explains_the_command() {
+        let note = wayland_shortcut_note(
+            "the portal is not available",
+            "flatpak run dev.barayuda.Snapline --capture",
+        );
+        assert!(
+            note.contains("keyboard settings")
+                && note.contains("flatpak run dev.barayuda.Snapline --capture")
+                && note.contains("not available"),
             "{note}"
         );
     }
