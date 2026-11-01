@@ -38,32 +38,65 @@ fn parse<T: for<'de> Deserialize<'de>>(body: &[u8], what: &str) -> Result<T, Upl
         .map_err(|e| UploadError::message(format!("Drive sent an unexpected {what}: {e}")))
 }
 
-/// The saved folder if it still exists and is not trashed; otherwise a new one.
+/// Snapline's own folders named "Snapline", for `files.list` (scope `drive.file` shows only files Snapline made).
+const SEARCH: &str =
+    "name = 'Snapline' and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+
+/// The saved folder if it still exists; else the oldest Snapline folder (signing in again forgets the saved one);
+/// else a new one. Only a 404 or a trashed folder counts as gone: any other error stops the upload, so a passing
+/// failure never makes a second folder.
 fn folder(t: &dyn Transport, token: &str, saved: Option<&str>) -> Result<String, UploadError> {
     #[derive(Deserialize)]
     struct Folder {
         trashed: bool,
     }
     #[derive(Deserialize)]
-    struct Created {
+    struct Found {
         id: String,
+    }
+    #[derive(Deserialize)]
+    struct List {
+        #[serde(default)]
+        files: Vec<Found>,
     }
     if let Some(id) = saved.filter(|id| !id.is_empty()) {
         let mut url = file_url(id, &[]);
         url.set_query(Some("fields=id,trashed"));
         let response = t.send(&authorized(Request::new("GET", url), token), &|_| {})?;
-        if response.status == 200
-            && parse::<Folder>(&response.body, "folder").is_ok_and(|f| !f.trashed)
-        {
-            return Ok(id.to_owned());
+        match response.status {
+            200 if !parse::<Folder>(&response.body, "folder")?.trashed => return Ok(id.to_owned()),
+            200 | 404 => {}
+            status => {
+                return Err(UploadError::Http {
+                    action: "Checking the Snapline folder".into(),
+                    status,
+                    body: response.body,
+                });
+            }
         }
+    }
+    let mut url = url::Url::parse(FILES).expect("fixed URL");
+    url.query_pairs_mut()
+        .append_pair("q", SEARCH)
+        .append_pair("orderBy", "createdTime")
+        .append_pair("pageSize", "1")
+        .append_pair("spaces", "drive")
+        .append_pair("fields", "files(id)");
+    let request = authorized(Request::new("GET", url), token);
+    let body = send_ok(t, &request, "Looking for the Snapline folder", &|_| {})?;
+    if let Some(found) = parse::<List>(&body, "folder list")?
+        .files
+        .into_iter()
+        .next()
+    {
+        return Ok(found.id);
     }
     let mut url = url::Url::parse(FILES).expect("fixed URL");
     url.set_query(Some("fields=id"));
     let request = authorized(Request::new("POST", url), token)
         .json(&serde_json::json!({ "name": "Snapline", "mimeType": "application/vnd.google-apps.folder" }));
     let body = send_ok(t, &request, "Creating the Snapline folder", &|_| {})?;
-    Ok(parse::<Created>(&body, "folder")?.id)
+    Ok(parse::<Found>(&body, "folder")?.id)
 }
 
 /// Uploads `png` into the Snapline folder and shares it by link.
@@ -132,10 +165,16 @@ mod tests {
     use crate::http::fake::FakeTransport;
 
     const FILE: &str = r#"{"id":"X1","webViewLink":"https://drive.google.com/file/d/X1/view"}"#;
+    const NONE_FOUND: &str = r#"{"files":[]}"#;
 
     #[test]
     fn first_upload_creates_the_folder_uploads_and_shares() {
-        let fake = FakeTransport::new(vec![(200, r#"{"id":"F1"}"#), (200, FILE), (200, "{}")]);
+        let fake = FakeTransport::new(vec![
+            (200, NONE_FOUND),
+            (200, r#"{"id":"F1"}"#),
+            (200, FILE),
+            (200, "{}"),
+        ]);
         let done = upload(&fake, "TOKEN", None, b"PNG", "Shot.png", &|_| {}).unwrap();
         assert_eq!(done.folder_id, "F1");
         assert_eq!(
@@ -143,7 +182,12 @@ mod tests {
             "https://drive.google.com/file/d/X1/view"
         );
         assert!(done.result.direct.as_str().contains("X1"));
-        let sent = fake.requests();
+        let mut sent = fake.requests();
+        assert_eq!(
+            sent.remove(0).method,
+            "GET",
+            "looks for an old folder first"
+        );
         assert!(
             String::from_utf8_lossy(&sent[0].body).contains("application/vnd.google-apps.folder")
         );
@@ -184,6 +228,7 @@ mod tests {
     fn a_trashed_or_deleted_folder_is_made_again() {
         let fake = FakeTransport::new(vec![
             (200, r#"{"id":"F1","trashed":true}"#),
+            (200, NONE_FOUND),
             (200, r#"{"id":"F2"}"#),
             (200, FILE),
             (200, "{}"),
@@ -196,6 +241,7 @@ mod tests {
         );
         let fake = FakeTransport::new(vec![
             (404, "{}"),
+            (200, NONE_FOUND),
             (200, r#"{"id":"F3"}"#),
             (200, FILE),
             (200, "{}"),
@@ -210,11 +256,62 @@ mod tests {
 
     #[test]
     fn upload_errors_name_the_step() {
-        let fake = FakeTransport::new(vec![(200, r#"{"id":"F1"}"#), (403, "quota")]);
+        let fake = FakeTransport::new(vec![
+            (200, NONE_FOUND),
+            (200, r#"{"id":"F1"}"#),
+            (403, "quota"),
+        ]);
         let text = match upload(&fake, "T", None, b"PNG", "Shot.png", &|_| {}) {
             Err(e) => e.to_string(),
             Ok(_) => panic!("expected an error"),
         };
         assert_eq!(text, "Drive upload failed (HTTP 403). quota");
+    }
+
+    // A user report: signing in again forgot the saved folder, and each sign-in made one more "Snapline" in My Drive.
+    #[test]
+    fn signing_in_again_reuses_the_oldest_snapline_folder() {
+        let fake = FakeTransport::new(vec![
+            (200, r#"{"files":[{"id":"OLD"}]}"#),
+            (200, FILE),
+            (200, "{}"),
+        ]);
+        let done = upload(&fake, "T", None, b"PNG", "Shot.png", &|_| {}).unwrap();
+        assert_eq!(done.folder_id, "OLD");
+        let sent = fake.requests();
+        assert_eq!(sent.len(), 3, "no folder made");
+        let query: Vec<(String, String)> = sent[0].url.query_pairs().into_owned().collect();
+        let get = |k: &str| {
+            query
+                .iter()
+                .find(|(key, _)| key == k)
+                .map(|(_, v)| v.as_str())
+        };
+        assert_eq!(
+            get("q"),
+            Some(
+                "name = 'Snapline' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+            )
+        );
+        assert_eq!(get("orderBy"), Some("createdTime"));
+        assert!(String::from_utf8_lossy(&sent[1].body).contains(r#""parents":["OLD"]"#));
+    }
+
+    // Only a 404 or a trashed folder is gone: a passing error (expired token, rate limit, outage) must not make a
+    // second folder.
+    #[test]
+    fn a_failed_folder_check_makes_no_second_folder() {
+        for status in [401, 429, 500] {
+            let fake = FakeTransport::new(vec![(status, "busy")]);
+            let text = match upload(&fake, "T", Some("F1"), b"PNG", "Shot.png", &|_| {}) {
+                Err(e) => e.to_string(),
+                Ok(_) => panic!("expected an error for HTTP {status}"),
+            };
+            assert_eq!(
+                text,
+                format!("Checking the Snapline folder failed (HTTP {status}). busy")
+            );
+            assert_eq!(fake.requests().len(), 1);
+        }
     }
 }

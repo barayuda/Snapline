@@ -308,6 +308,7 @@ mod tests {
         });
         let fake = FakeTransport::new(vec![
             (200, r#"{"access_token":"A","expires_in":3600}"#),
+            (200, r#"{"files":[]}"#),
             (200, r#"{"id":"F1"}"#),
             (
                 200,
@@ -387,6 +388,7 @@ mod tests {
     fn a_cached_token_from_another_sign_in_is_not_used() {
         let fake = FakeTransport::new(vec![
             (200, r#"{"access_token":"NEW","expires_in":3600}"#),
+            (200, r#"{"files":[]}"#),
             (200, r#"{"id":"F1"}"#),
             (200, UPLOADED),
             (200, "{}"),
@@ -411,6 +413,7 @@ mod tests {
         let fake = FakeTransport::new(vec![
             (401, r#"{"error":{"message":"Invalid Credentials"}}"#),
             (200, r#"{"access_token":"NEW","expires_in":3600}"#),
+            (200, r#"{"files":[]}"#),
             (200, r#"{"id":"F1"}"#),
             (200, UPLOADED),
             (200, "{}"),
@@ -430,7 +433,7 @@ mod tests {
             panic!("expected Done")
         };
         assert_eq!(token.access.token, "NEW");
-        assert_eq!(fake.requests().len(), 5);
+        assert_eq!(fake.requests().len(), 6);
     }
 
     #[test]
