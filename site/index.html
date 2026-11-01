@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Snapline: screenshots for your Mac, with the private bits hidden</title>
-  <meta name="description" content="Snapline is a free screenshot tool for the Mac menu bar. Select an area, mark it up, then copy, save or share it. Emails, card numbers and keys are covered on your Mac before you share.">
+  <title>Snapline: screenshots for your Mac or PC, with the private bits hidden</title>
+  <meta name="description" content="Snapline is a free screenshot tool for the Mac menu bar, the Windows tray and Linux panels. Select an area, mark it up, then copy, save or share it. Emails, card numbers and keys are covered on your computer before you share.">
   <link rel="canonical" href="https://snapline.barayuda.web.id/">
   <link rel="icon" href="/assets/favicon-64.png" type="image/png">
   <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Snapline">
-  <meta property="og:description" content="Capture. Mark up. Hide what matters. A free screenshot tool for Macs with Apple silicon.">
+  <meta property="og:description" content="Capture. Mark up. Hide what matters. A free screenshot tool for Macs with Apple silicon, Windows PCs and Linux desktops.">
   <meta property="og:url" content="https://snapline.barayuda.web.id/">
   <meta property="og:image" content="https://snapline.barayuda.web.id/assets/og.png">
   <meta name="twitter:card" content="summary_large_image">
@@ -46,12 +46,13 @@
       <div class="wrap">
         <div>
           <h1><span>Capture.</span> <span>Mark up.</span> <span>Hide what matters.</span></h1>
-          <p class="lede">A free screenshot tool for the Mac menu bar. Drag over an area, draw on it, then copy, save or share it. Emails, card numbers and keys are covered before anyone else sees them.</p>
+          <p class="lede">A free screenshot tool for the Mac menu bar, the Windows tray and Linux panels. Drag over an area, draw on it, then copy, save or share it. Emails, card numbers and keys are covered before anyone else sees them.</p>
           <div class="actions">
             <a class="button primary" href="#get">Build it on your Mac</a>
+            <span class="button soon" aria-disabled="true">Windows and Linux: coming soon</span>
             <a class="button" href="https://github.com/barayuda/Snapline">See the code on GitHub</a>
           </div>
-          <p class="fineprint">For Macs with Apple silicon, macOS 15 or newer. Everything runs on your Mac.</p>
+          <p class="fineprint">For Macs with Apple silicon, macOS 15 or newer. Versions for Windows 10 and 11, and for Linux desktops (X11 and Wayland), are coming soon. Everything runs on your computer.</p>
         </div>
 
         <figure class="demo">
@@ -127,15 +128,15 @@
     <section class="section" id="privacy" aria-labelledby="privacy-title">
       <div class="wrap split">
         <div>
-          <h2 id="privacy-title">Nothing leaves your Mac unless you send it</h2>
+          <h2 id="privacy-title">Nothing leaves your computer unless you send it</h2>
         </div>
         <div>
-          <p class="intro">Snapline has no servers, no accounts of its own, no analytics and no tracking. Capturing, auto-hide and Copy Text use Apple's built-in frameworks on your Mac.</p>
+          <p class="intro">Snapline has no servers, no accounts of its own, no analytics and no tracking. Capturing, auto-hide and Copy Text use the built-in frameworks of macOS or Windows, or Tesseract on Linux, on your computer.</p>
           <ul class="plain">
             <li><strong>Upload</strong> sends the image to the place you set up: your own bucket or your own Google Drive.</li>
             <li><strong>Search similar images</strong> uploads it there first, then opens Google Lens or TinEye with the link.</li>
-            <li><strong>Email</strong> hands the file to your mail app.</li>
-            <li>Bucket keys and your Google sign-in are kept in the macOS Keychain.</li>
+            <li><strong>Email</strong> (Mac) hands the file to your mail app; <strong>Share</strong> (Windows) hands it to the app you pick; <strong>Share</strong> (Linux) opens an email with the file attached.</li>
+            <li>Bucket keys and your Google sign-in are kept in the macOS Keychain, Windows Credential Manager or the desktop keyring on Linux.</li>
           </ul>
           <p class="note">Details, including what Snapline does with Google account data: <a href="/privacy/">Privacy policy</a>.</p>
         </div>
@@ -159,7 +160,7 @@ cd Snapline</pre><button class="copy" type="button" data-copy="step-clone">Copy<
           <li>
             <div>
               <p>Build it and put it in Applications.</p>
-              <div class="code"><pre id="step-build">scripts/make-app.sh --install</pre><button class="copy" type="button" data-copy="step-build">Copy</button></div>
+              <div class="code"><pre id="step-build">macOS/scripts/make-app.sh --install</pre><button class="copy" type="button" data-copy="step-build">Copy</button></div>
             </div>
           </li>
           <li>
