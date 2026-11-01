@@ -241,6 +241,15 @@ pub fn first_time(marker: &Path) -> bool {
     true
 }
 
+/// Shown in Settings → General instead of the shortcut recorder in a Wayland session.
+#[must_use]
+pub fn wayland_shortcut_hint(command: &str) -> String {
+    format!(
+        "Your desktop owns the capture shortcut: change it in its keyboard settings. If it offered none, add a custom \
+         shortcut there that runs:\n{command}"
+    )
+}
+
 /// Said once in a Wayland session when the desktop has no `GlobalShortcuts` portal (or refused it): bind `command`
 /// yourself.
 #[must_use]
@@ -384,6 +393,16 @@ mod tests {
         assert!(
             note.contains("keyboard settings") && !note.contains("Snipping Tool"),
             "{note}"
+        );
+    }
+
+    // Phase 6b review: on Wayland the Settings recorder changed a key nothing listens to.
+    #[test]
+    fn on_wayland_settings_says_the_desktop_owns_the_shortcut() {
+        let hint = wayland_shortcut_hint("snapline --capture");
+        assert!(
+            hint.contains("keyboard settings") && hint.contains("snapline --capture"),
+            "{hint}"
         );
     }
 

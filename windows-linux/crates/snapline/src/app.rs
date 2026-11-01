@@ -124,6 +124,14 @@ pub struct App {
 impl App {
     /// `capture_at_start`: take a screenshot once the tray is up (`snapline --capture` with none running).
     pub fn new(proxy: EventLoopProxy<UserEvent>, capture_at_start: bool) -> Self {
+        // Listen at once: a `snapline --capture` sent while the tray and keyring start must not be lost.
+        let signals = proxy.clone();
+        platform::watch(move |signal| {
+            let _ = signals.send_event(match signal {
+                platform::Signal::Settings => UserEvent::SettingsChanged,
+                platform::Signal::Capture => UserEvent::HotKey,
+            });
+        });
         Self {
             capture_at_start,
             proxy,
@@ -178,14 +186,6 @@ impl App {
                 let _ = p.send_event(UserEvent::HotKey);
             }
         }));
-
-        let proxy = self.proxy.clone();
-        platform::watch(move |signal| {
-            let _ = proxy.send_event(match signal {
-                platform::Signal::Settings => UserEvent::SettingsChanged,
-                platform::Signal::Capture => UserEvent::HotKey,
-            });
-        });
 
         let labels = self.register_hotkeys();
         self.add_tray(&labels);

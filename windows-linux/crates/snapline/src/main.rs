@@ -49,7 +49,7 @@ fn main() {
         return message::run_window(text);
     }
     if let Some(problem) = platform::session_problem() {
-        return platform::show_error(problem);
+        return platform::show_error_and_wait(problem);
     }
     // `--upload-settings` is the Phase 3 name, kept for shortcuts made then.
     if args
@@ -64,7 +64,14 @@ fn main() {
         return;
     }
     if !platform::claim_single_instance() {
-        platform::show_error(&format!(
+        // Started a moment ago and not listening yet: hand the capture over once it is.
+        let wait = std::time::Duration::from_millis(200);
+        if capture_at_start
+            && platform::send_retrying(|| platform::send(platform::Signal::Capture), 25, wait)
+        {
+            return;
+        }
+        platform::show_error_and_wait(&format!(
             "Snapline is already running. Look for its icon {}.",
             platform::TRAY_PLACE
         ));
@@ -80,11 +87,11 @@ fn main() {
     }
     let event_loop = match builder.build() {
         Ok(l) => l,
-        Err(e) => return platform::show_error(&format!("Snapline could not start: {e}")),
+        Err(e) => return platform::show_error_and_wait(&format!("Snapline could not start: {e}")),
     };
     event_loop.set_control_flow(ControlFlow::Wait);
     let mut app = app::App::new(event_loop.create_proxy(), capture_at_start);
     if let Err(e) = event_loop.run_app(&mut app) {
-        platform::show_error(&format!("Snapline stopped: {e}"));
+        platform::show_error_and_wait(&format!("Snapline stopped: {e}"));
     }
 }

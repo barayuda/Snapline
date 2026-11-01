@@ -177,7 +177,8 @@ these differences:
     once. Elsewhere (GNOME 46 and 47, for example), add a custom shortcut in the desktop's keyboard settings that runs
     `snapline --capture` (`flatpak run dev.barayuda.Snapline --capture` for the Flatpak, or the AppImage path). It
     also starts Snapline when it is not running.
-  - With fractional scaling (125 %, 150 %) Snapline's windows look a little soft, as XWayland apps do.
+  - Fractional scaling (125 %, 150 %) and monitors with different scales are not checked yet: the overlay may look
+    soft, or not line up with the screen. Please report what you see.
 
 - No face detection yet, so faces are not hidden; text is.
 - Share opens a new email with the screenshot attached (`xdg-email`), as Email does on macOS.

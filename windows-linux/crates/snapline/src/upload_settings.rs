@@ -153,7 +153,7 @@ pub fn run_window() {
         return; // ponytail: the open window is not brought to the front
     }
     let Some(path) = Settings::path() else {
-        return crate::platform::show_error("Snapline cannot find your settings folder.");
+        return crate::platform::show_error_and_wait("Snapline cannot find your settings folder.");
     };
     // Without a keyring, Settings still opens (shortcuts, save folder, auto-hide); keys cannot be saved.
     let (store, no_keyring) = match Keyring::open() {
@@ -195,7 +195,7 @@ pub fn run_window() {
         options,
         Box::new(|_| Ok(Box::new(app))),
     ) {
-        crate::platform::show_error(&format!("Snapline could not open its settings: {e}"));
+        crate::platform::show_error_and_wait(&format!("Snapline could not open its settings: {e}"));
     }
 }
 
@@ -498,6 +498,44 @@ impl SettingsApp {
         }
     }
 
+    /// The capture-shortcut rows of the General grid: the recorder and the Print Screen box, or on Wayland a hint.
+    fn shortcut_rows(&mut self, ui: &mut eframe::egui::Ui) {
+        // Wayland: the desktop owns the key (portal, or a custom shortcut); a key recorded here does nothing.
+        if crate::platform::is_wayland() {
+            ui.label(crate::settings::wayland_shortcut_hint(
+                &crate::platform::capture_command(),
+            ));
+            ui.end_row();
+        } else {
+            ui.horizontal(|ui| {
+                let label = if self.recording {
+                    "Type a shortcut…".to_owned()
+                } else {
+                    self.settings
+                        .capture_shortcut()
+                        .map_or("None".to_owned(), crate::settings::shortcut_label)
+                };
+                ui.label(eframe::egui::RichText::new(label).strong());
+                if ui
+                    .button(if self.recording { "Cancel" } else { "Record" })
+                    .clicked()
+                {
+                    self.recording = !self.recording;
+                    self.general_error = None;
+                }
+            });
+            ui.end_row();
+
+            ui.label("");
+            let mut print_screen = self.settings.uses_print_screen();
+            if ui.checkbox(&mut print_screen, "Also use PrtScn").changed() {
+                let shortcut = self.settings.capture_shortcut().map(str::to_owned);
+                self.save_general(|s| s.set_shortcuts(shortcut, print_screen));
+            }
+            ui.end_row();
+        }
+    }
+
     fn general_tab(&mut self, ui: &mut eframe::egui::Ui) {
         if self.recording {
             self.record_shortcut(ui);
@@ -507,32 +545,7 @@ impl SettingsApp {
             .spacing([12.0, 10.0])
             .show(ui, |ui| {
                 ui.label("Capture shortcut");
-                ui.horizontal(|ui| {
-                    let label = if self.recording {
-                        "Type a shortcut…".to_owned()
-                    } else {
-                        self.settings
-                            .capture_shortcut()
-                            .map_or("None".to_owned(), crate::settings::shortcut_label)
-                    };
-                    ui.label(eframe::egui::RichText::new(label).strong());
-                    if ui
-                        .button(if self.recording { "Cancel" } else { "Record" })
-                        .clicked()
-                    {
-                        self.recording = !self.recording;
-                        self.general_error = None;
-                    }
-                });
-                ui.end_row();
-
-                ui.label("");
-                let mut print_screen = self.settings.uses_print_screen();
-                if ui.checkbox(&mut print_screen, "Also use PrtScn").changed() {
-                    let shortcut = self.settings.capture_shortcut().map(str::to_owned);
-                    self.save_general(|s| s.set_shortcuts(shortcut, print_screen));
-                }
-                ui.end_row();
+                self.shortcut_rows(ui);
 
                 ui.label("Clicking the tray icon");
                 let mut click = self.settings.tray_click;

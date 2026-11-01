@@ -1,5 +1,6 @@
 //! Message boxes on Linux, drawn with egui. rfd's Linux message box needs zenity, which many desktops and the
-//! Flatpak sandbox lack, so `show` runs this program again with `--message <text>`, as Settings does, and waits.
+//! Flatpak sandbox lack, so this program runs again with `--message <text>`, as Settings does: `show` returns at once
+//! (the tray app must keep running), `show_and_wait` waits (right before Snapline exits).
 
 /// The arguments that show `text`.
 #[must_use]
@@ -24,6 +25,28 @@ pub fn show(text: &str) {
         }
         Err(_) => eprintln!("Snapline: {text}"),
     }
+}
+
+/// Shows `text` and waits until it is closed, for messages right before Snapline exits: the Flatpak sandbox and
+/// the `AppImage` mount end with the process, and a box left running would vanish with them.
+pub fn show_and_wait(text: &str) {
+    match std::env::current_exe() {
+        Ok(exe) => {
+            let mut window = std::process::Command::new(exe);
+            window.args(args(text));
+            show_and_wait_using(window, text);
+        }
+        Err(_) => eprintln!("Snapline: {text}"),
+    }
+}
+
+/// Runs `window` to the end; true when it was shown. Otherwise `text` goes to stderr.
+pub fn show_and_wait_using(mut window: std::process::Command, text: &str) -> bool {
+    let shown = window.status().is_ok_and(|s| s.success());
+    if !shown {
+        eprintln!("Snapline: {text}");
+    }
+    shown
 }
 
 /// Starts `window` (the `--message` window) and returns at once: the window is its own process, so it must not
@@ -100,6 +123,21 @@ mod tests {
         assert_eq!(parse(&args(text)).as_deref(), Some(text));
         assert_eq!(parse(&["--message".into()]), None);
         assert_eq!(parse(&["--settings".into()]), None);
+    }
+
+    // Phase 6b review: a message right before Snapline exits must be waited for (Flatpak and AppImage end the
+    // child with the parent), and when no window opens the text goes to stderr.
+    #[test]
+    fn a_message_before_exit_waits_until_it_is_closed() {
+        let mut slow = std::process::Command::new("sleep");
+        slow.arg("1");
+        let started = std::time::Instant::now();
+        assert!(show_and_wait_using(slow, "Snapline is already running."));
+        assert!(started.elapsed() >= std::time::Duration::from_secs(1));
+        assert!(!show_and_wait_using(
+            std::process::Command::new("false"),
+            "no window: printed instead"
+        ));
     }
 
     // Phase 6b check: the "no tray icons" note blocked Snapline's event loop, so a capture waited until it was

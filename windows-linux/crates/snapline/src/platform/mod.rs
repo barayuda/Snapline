@@ -141,7 +141,7 @@ pub fn cursor_position() -> Option<(i32, i32)> {
     None
 }
 
-/// A message box (blocks until closed).
+/// A message box. On Linux it returns at once (the box is its own process); elsewhere it waits until closed.
 pub fn show_error(message: &str) {
     #[cfg(target_os = "linux")]
     crate::message::show(message);
@@ -154,7 +154,29 @@ pub fn show_error(message: &str) {
         .show();
 }
 
-/// An information box (blocks until closed).
+/// A message box that waits until it is closed, for messages right before Snapline exits.
+pub fn show_error_and_wait(message: &str) {
+    #[cfg(target_os = "linux")]
+    crate::message::show_and_wait(message);
+    #[cfg(not(target_os = "linux"))]
+    show_error(message);
+}
+
+/// `send` until it is delivered, `tries` times at most, `wait` apart: a starting Snapline holds the claim a moment
+/// before it listens.
+pub fn send_retrying(send: impl Fn() -> bool, tries: u32, wait: std::time::Duration) -> bool {
+    for attempt in 0..tries {
+        if send() {
+            return true;
+        }
+        if attempt + 1 < tries {
+            std::thread::sleep(wait);
+        }
+    }
+    false
+}
+
+/// An information box. On Linux it returns at once (the box is its own process); elsewhere it waits until closed.
 pub fn show_info(message: &str) {
     #[cfg(target_os = "linux")]
     crate::message::show(message);
@@ -677,6 +699,27 @@ pub fn temp_dir() -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Phase 6b review: `--capture` right while Snapline starts (claim taken, socket not bound yet) said "already
+    // running" and took no screenshot; it now tries again for a moment.
+    #[test]
+    fn sending_tries_again_while_snapline_starts() {
+        let tries = std::cell::Cell::new(0);
+        let delivered = send_retrying(
+            || {
+                tries.set(tries.get() + 1);
+                tries.get() == 3
+            },
+            5,
+            std::time::Duration::from_millis(10),
+        );
+        assert!(delivered && tries.get() == 3);
+        assert!(!send_retrying(
+            || false,
+            3,
+            std::time::Duration::from_millis(1)
+        ));
+    }
 
     #[test]
     fn the_run_value_quotes_the_path() {

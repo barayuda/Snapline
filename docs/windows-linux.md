@@ -129,7 +129,7 @@ Each phase ends with something that works on its own and has its own plan in `do
   fail there. Add the Windows certificate store if users hit it.
 - **SmartScreen.** An unsigned installer shows a warning. Code signing is planned for Phase 5.
 - **Wayland.** Capture and the shortcut depend on portals: GNOME asks to allow screenshots, and the GlobalShortcuts
-  portal is missing before GNOME 48 (Snapline then explains `snapline --capture`). Windows look soft with fractional
-  scaling (XWayland).
+  portal is missing before GNOME 48 (Snapline then explains `snapline --capture`). Fractional and mixed scaling are not
+  checked: through XWayland the overlay may look soft or not line up with the screen.
 - **Tray on GNOME.** GNOME shows no tray icons without an extension. Snapline says so once and keeps working from its
   shortcuts.
