@@ -135,24 +135,40 @@ struct DriveUploader: Uploader {
         api.appending(path: "files").appending(path: id, directoryHint: .notDirectory)
     }
 
-    /// The "Snapline" folder in My Drive; created again if it was deleted or trashed.
+    /// The saved "Snapline" folder; else the oldest one Snapline made (signing in again forgets the saved one); else a
+    /// new one. Only a deleted or trashed folder is replaced: any other error fails the upload.
     private func folderID(token: String) async throws -> String {
         if let id = UserDefaults.standard.string(forKey: Key.driveFolderID) {
-            var request = URLRequest(url: Self.file(id).appending(queryItems: [URLQueryItem(name: "fields", value: "id,trashed")]))
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            let (data, response) = try await URLSession.shared.data(for: request)
-            struct Folder: Decodable { let trashed: Bool }
-            if (response as? HTTPURLResponse)?.statusCode == 200, (try? JSONDecoder().decode(Folder.self, from: data))?.trashed == false {
-                return id
+            let url = Self.file(id).appending(queryItems: [URLQueryItem(name: "fields", value: "id,trashed")])
+            let (data, http) = try await get(url, token: token)
+            switch DriveFolder.saved(status: http.statusCode, body: data) {
+            case .use: return id
+            case .gone: break
+            case .failed: throw HTTPError(action: "Checking the Snapline folder", status: http.statusCode, body: data)
             }
         }
-        let create = Self.api.appending(path: "files").appending(queryItems: [URLQueryItem(name: "fields", value: "id")])
-        let (data, http) = try await json("POST", create, ["name": "Snapline", "mimeType": "application/vnd.google-apps.folder"], token: token)
-        try checkStatus(http, body: data, action: "Creating the Snapline folder")
-        struct Created: Decodable { let id: String }
-        let id = try JSONDecoder().decode(Created.self, from: data).id
+        let (found, foundHTTP) = try await get(DriveFolder.searchURL(api: Self.api), token: token)
+        try checkStatus(foundHTTP, body: found, action: "Looking for the Snapline folder")
+        let id: String
+        if let existing = try DriveFolder.firstID(inList: found) {
+            id = existing
+        } else {
+            let create = Self.api.appending(path: "files").appending(queryItems: [URLQueryItem(name: "fields", value: "id")])
+            let (data, http) = try await json("POST", create, ["name": DriveFolder.name, "mimeType": DriveFolder.mimeType], token: token)
+            try checkStatus(http, body: data, action: "Creating the Snapline folder")
+            struct Created: Decodable { let id: String }
+            id = try JSONDecoder().decode(Created.self, from: data).id
+        }
         UserDefaults.standard.set(id, forKey: Key.driveFolderID)
         return id
+    }
+
+    private func get(_ url: URL, token: String) async throws -> (Data, HTTPURLResponse) {
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw UploadError(message: "No HTTP response.") }
+        return (data, http)
     }
 
     private func json(_ method: String, _ url: URL, _ object: [String: String], token: String) async throws -> (Data, HTTPURLResponse) {
