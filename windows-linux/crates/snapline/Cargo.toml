@@ -1,0 +1,76 @@
+[package]
+name = "snapline"
+version = "0.1.0"
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+arboard = "3.7.0"
+chrono = "0.4.45"
+dirs = "7.0.0"
+eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts", "accesskit", "wayland", "x11"] }
+global-hotkey = "0.9.0"
+keyring-core = "1.0.1"
+open = "5.4.5"
+rfd = "0.17.2"
+serde = { version = "1.0.229", features = ["derive"] }
+snapline-core = { path = "../snapline-core" }
+snapline-overlay = { path = "../snapline-overlay" }
+snapline-upload = { version = "0.1.0", path = "../snapline-upload" }
+softbuffer = "0.4.8"
+toml = "1.1.8"
+url = "2.5.8"
+winit = "0.30.13"
+xcap = "0.9.8"
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+tray-icon = "0.26.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.13.13", default-features = false, features = ["global_shortcuts", "async-io"] }
+futures-util = "0.3.34"
+ksni = { version = "0.3.7", default-features = false, features = ["blocking", "async-io"] }
+tesseract-rs = { version = "0.4.0", default-features = false, features = ["use-system-tesseract"] }
+x11rb = "0.13.2"
+zbus-secret-service-keyring-store = { version = "1.0.1", features = ["rt-async-io-crypto-rust"] }
+zbus = { version = "5.19", default-features = false, features = ["blocking-api", "async-io"] }
+
+[target."cfg(windows)".dependencies]
+windows = { version = "0.62", features = ["Media_Ocr", "Media_FaceAnalysis", "Graphics_Imaging", "Storage_Streams", "Globalization", "Foundation_Collections", "Win32_System_WinRT", "ApplicationModel_DataTransfer", "Storage", "Win32_UI_Shell"] }
+windows-collections = "0.3"
+windows-native-keyring-store = "1.1.0"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_System_Diagnostics_Debug", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
+[target."cfg(windows)".build-dependencies]
+ico = "0.6"
+tiny-skia = "0.12"
+winresource = "0.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "1.0.2", features = ["keychain"] }
+
+[dev-dependencies]
+snapline-upload = { path = "../snapline-upload", features = ["fake"] }
+
+# The .deb (cargo-deb). `$auto` finds the libraries snapline links; the ones winit and eframe load at run time
+# (Xlib, Xcursor, Xi, Xrandr, xkbcommon-x11, EGL) are listed by hand.
+[package.metadata.deb]
+name = "snapline"
+maintainer = "Barayuda <barayuda@users.noreply.github.com>"
+copyright = "2026, Barayuda"
+license-file = ["../../../LICENSE.md", "0"]
+extended-description = "A screenshot tool for the tray: capture, mark up, copy, save, upload. Emails, card numbers and keys are covered before you share. Needs an X11 session."
+section = "graphics"
+priority = "optional"
+depends = "$auto, tesseract-ocr-eng, xdg-utils, libx11-6, libxcursor1, libxi6, libxrandr2, libxkbcommon-x11-0, libegl1"
+recommends = "gnome-keyring | kwalletmanager"
+assets = [
+  ["target/release/snapline", "usr/bin/", "755"],
+  ["../../linux/dev.barayuda.Snapline.desktop", "usr/share/applications/", "644"],
+  ["../../linux/dev.barayuda.Snapline.metainfo.xml", "usr/share/metainfo/", "644"],
+  ["../../linux/dev.barayuda.Snapline.png", "usr/share/icons/hicolor/512x512/apps/", "644"],
+]

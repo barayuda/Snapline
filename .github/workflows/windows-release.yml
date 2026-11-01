@@ -1,0 +1,143 @@
+name: windows-release
+
+# A `windows-v<version>` tag builds Snapline for Windows and creates a DRAFT release; Barayuda checks it and
+# publishes it. Signing runs only once the AZURE_SIGNING_* repository variables exist (see docs/releasing-windows.md).
+on:
+  push:
+    tags: ["windows-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: windows-linux
+        shell: pwsh
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      signed: ${{ steps.version.outputs.signed }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - id: version
+        name: Check the tag against the crate version
+        env:
+          TAG: ${{ github.ref_name }}
+          SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+        run: |
+          $tag = $env:TAG -replace '^windows-v', ''
+          $crate = (cargo pkgid -p snapline) -replace '.*[#@]', ''
+          if ($tag -ne $crate) { throw "Tag says $tag but snapline's Cargo.toml says $crate" }
+          "version=$crate" >> $env:GITHUB_OUTPUT
+          "signed=$(-not [string]::IsNullOrEmpty($env:SIGNING_ACCOUNT))".ToLower() >> $env:GITHUB_OUTPUT
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo build --release -p snapline
+      - name: Build the installer, zip and checksums
+        run: ./installer/package.ps1 -Version ${{ steps.version.outputs.version }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: snapline-windows-release
+          path: windows-linux/target/dist/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: snapline-exe
+          path: windows-linux/target/release/snapline.exe
+          if-no-files-found: error
+
+  # Only this job can ask for an Azure token, and it builds nothing with cargo, so no dependency's build script
+  # ever runs while a token is available.
+  sign:
+    needs: build
+    if: needs.build.outputs.signed == 'true'
+    runs-on: windows-latest
+    # Azure trusts this environment (an exact federated-credential subject), not the tag name, which it cannot match.
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: windows-linux
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: snapline-exe
+          path: windows-linux/target/release
+      - name: Sign in to Azure
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign snapline.exe
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\windows-linux\target\release\snapline.exe
+          file-digest: SHA256
+          timestamp-digest: SHA256
+      - name: Build the installer and zip around the signed exe
+        run: ./installer/package.ps1 -Version ${{ needs.build.outputs.version }}
+      - name: Sign the installer
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\windows-linux\target\dist\Snapline-Setup-${{ needs.build.outputs.version }}.exe
+          file-digest: SHA256
+          timestamp-digest: SHA256
+      - name: Checksums of the signed files
+        run: ./installer/package.ps1 -Version ${{ needs.build.outputs.version }} -SumsOnly
+      - uses: actions/upload-artifact@v7
+        with:
+          name: snapline-windows-release
+          path: windows-linux/target/dist/*
+          if-no-files-found: error
+          overwrite: true
+
+  release:
+    needs: [build, sign]
+    # Runs after signing succeeded, or when signing was skipped (not set up); never after a failed, cancelled or
+    # timed-out sign job, which would otherwise ship the unsigned files.
+    if: ${{ !cancelled() && needs.build.result == 'success' && (needs.sign.result == 'success' || needs.sign.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: snapline-windows-release
+          path: dist
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          # Signed only if the sign job really ran and succeeded.
+          SIGNED: ${{ needs.sign.result == 'success' }}
+        run: |
+          {
+            echo "Download **Snapline-Setup-$VERSION.exe** and run it (no admin rights needed), or use the portable zip."
+            echo
+            if [ "$SIGNED" != "true" ]; then
+              echo "This build is not signed yet, so Windows SmartScreen asks first: choose **More info**, then **Run anyway**."
+              echo
+            fi
+            echo "SHA-256:"
+            echo
+            echo '```'
+            cat dist/SHA256SUMS.txt
+            echo '```'
+          } > notes.md
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "Snapline for Windows $VERSION" --notes-file notes.md dist/*

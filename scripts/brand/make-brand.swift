@@ -5,7 +5,7 @@
 import AppKit
 import CoreText
 
-// MARK: - Palette (keep in sync with Sources/Snapline/Brand.swift)
+// MARK: - Palette (keep in sync with macOS/Sources/Snapline/Brand.swift)
 
 func rgb(_ hex: UInt32, _ a: CGFloat = 1) -> CGColor {
     CGColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
@@ -280,7 +280,7 @@ func drawBanner(_ c: CGContext, w: CGFloat, h: CGFloat) {
                  color: rgb(0xD8CCFF, 0.92), at: CGPoint(x: textX + 6, y: h / 2 - 110))
 
     // Small clinical label, bottom right.
-    let label = "NATIVE APPLE SILICON  ·  ON-DEVICE PRIVACY  ·  macOS 15+"
+    let label = "macOS  ·  WINDOWS  ·  LINUX  ·  ON-DEVICE PRIVACY"
     let labelFont = CTFontCreateWithName("GeistMono-Regular" as CFString, 24, nil)
     let lw = CTLineGetTypographicBounds(CTLineCreateWithAttributedString(NSAttributedString(string: label, attributes: [.font: labelFont, .kern: 3])), nil, nil, nil)
     _ = drawText(c, label, font: "GeistMono-Regular", size: 24, color: rgb(0xFFFFFF, 0.42),
@@ -309,4 +309,9 @@ let (bw, bh) = (2560, 800)
 let banner = context(bw, bh)
 drawBanner(banner, w: CGFloat(bw), h: CGFloat(bh))
 writePNG(banner, "\(assets)/banner.png")
-print("Wrote Assets/AppIcon.icon, Assets/icon-1024.png, Assets/banner.png")
+// The website's social preview (og:image): the same banner at half size.
+let og = context(bw / 2, bh / 2)
+og.scaleBy(x: 0.5, y: 0.5)
+drawBanner(og, w: CGFloat(bw), h: CGFloat(bh))
+writePNG(og, "\(root)/site/assets/og.png")
+print("Wrote Assets/AppIcon.icon, Assets/icon-1024.png, Assets/banner.png, site/assets/og.png")

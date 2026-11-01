@@ -1,0 +1,756 @@
+//! The settings window: the General, Upload and Auto-hide tabs of the macOS Preferences. It runs as a second
+//! process, `snapline --settings`, shares `settings.toml` and Credential Manager with the tray app, and tells the
+//! tray app when a setting it holds (shortcuts, tray click) changes.
+
+use crate::secrets::{self, Secret, SecretStore};
+use crate::settings::{AutoHide, Settings, TrayClick, UploadTarget};
+use std::path::Path;
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UploadForm {
+    pub target: UploadTarget,
+    pub endpoint: String,
+    pub region: String,
+    pub bucket: String,
+    pub prefix: String,
+    pub public_url: String,
+    pub access_key: String,
+    pub secret_key: String,
+    pub client_id: String,
+    pub client_secret: String,
+    pub email: String,
+    pub signed_in: bool,
+    /// The result of the last Save: text, and whether everything is in order.
+    pub status: Option<(String, bool)>,
+    pub auto_hide: AutoHide,
+}
+
+impl UploadForm {
+    #[must_use]
+    pub fn load(settings: &Settings, secrets: &dyn SecretStore) -> Self {
+        Self {
+            target: settings.upload_target,
+            endpoint: settings.s3_endpoint.clone(),
+            region: settings.s3_region.clone(),
+            bucket: settings.s3_bucket.clone(),
+            prefix: settings.s3_prefix.clone(),
+            public_url: settings.s3_public_url.clone(),
+            access_key: secrets.get(Secret::S3AccessKey).unwrap_or_default(),
+            secret_key: secrets.get(Secret::S3SecretKey).unwrap_or_default(),
+            client_id: settings.google_client_id.clone(),
+            client_secret: secrets.get(Secret::GoogleClientSecret).unwrap_or_default(),
+            email: settings.google_email.clone(),
+            signed_in: secrets.get(Secret::GoogleRefreshToken).is_some(),
+            status: None,
+            auto_hide: settings.auto_hide,
+        }
+    }
+
+    /// Saves the plain fields to `settings.toml` and the secrets to the store, and sets `status`.
+    pub fn save(&mut self, path: &Path, store: &dyn SecretStore) {
+        let form = self.clone();
+        let written = Settings::update(path, |s| {
+            s.upload_target = form.target;
+            form.endpoint.trim().clone_into(&mut s.s3_endpoint);
+            form.region.trim().clone_into(&mut s.s3_region);
+            form.bucket.trim().clone_into(&mut s.s3_bucket);
+            form.prefix.trim().clone_into(&mut s.s3_prefix);
+            form.public_url.trim().clone_into(&mut s.s3_public_url);
+            form.client_id.trim().clone_into(&mut s.google_client_id);
+        });
+        if let Err(e) = written {
+            self.status = Some((e, false));
+            return;
+        }
+        let (stored, fields) = match self.target {
+            UploadTarget::S3 => (
+                secrets::save(store, Secret::S3AccessKey, &self.access_key)
+                    .and_then(|()| secrets::save(store, Secret::S3SecretKey, &self.secret_key)),
+                [
+                    ("access key ID", &self.access_key),
+                    ("secret access key", &self.secret_key),
+                ],
+            ),
+            UploadTarget::Drive => (
+                secrets::save(store, Secret::GoogleClientSecret, &self.client_secret),
+                [
+                    ("Client ID", &self.client_id),
+                    ("Client secret", &self.client_secret),
+                ],
+            ),
+        };
+        let status = if let Err(e) = stored {
+            (
+                format!("Could not save to {}: {e}", crate::platform::SECRET_STORE),
+                false,
+            )
+        } else {
+            let empty: Vec<&str> = fields
+                .iter()
+                .filter(|(_, v)| v.trim().is_empty())
+                .map(|(n, _)| *n)
+                .collect();
+            if empty.is_empty() {
+                ("Saved".into(), true)
+            } else {
+                (format!("Saved. Still empty: {}.", empty.join(", ")), false)
+            }
+        };
+        self.status = Some(status);
+    }
+
+    /// Saves the auto-hide choices at once, as macOS does; reports only a failure.
+    pub fn save_auto_hide(&mut self, path: &Path) {
+        let choice = self.auto_hide;
+        if let Err(e) = Settings::update(path, |s| s.auto_hide = choice) {
+            self.status = Some((e, false));
+        }
+    }
+}
+
+use crate::secrets::Keyring;
+use crate::shortcuts::Recorded;
+use snapline_core::sensitive_text::SensitiveCategory;
+use snapline_upload::google::{self, GoogleClient};
+use snapline_upload::http::UreqTransport;
+use std::sync::mpsc::{Receiver, channel};
+use std::time::Duration;
+
+const CONSOLE: &str = "https://console.cloud.google.com/auth/clients";
+const GUIDE: &str =
+    "https://github.com/barayuda/Snapline#google-drive-one-time-setup-about-10-minutes";
+const GREEN: eframe::egui::Color32 = eframe::egui::Color32::from_rgb(0x34, 0xC7, 0x59);
+const ORANGE: eframe::egui::Color32 = eframe::egui::Color32::from_rgb(0xFF, 0x95, 0x00);
+const RED: eframe::egui::Color32 = eframe::egui::Color32::from_rgb(0xFF, 0x3B, 0x30);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    General,
+    Upload,
+    AutoHide,
+}
+
+struct SettingsApp {
+    tab: Tab,
+    /// The settings as last saved, for the General tab.
+    settings: Settings,
+    /// Waiting for the keys of a new capture shortcut.
+    recording: bool,
+    /// Why the last General change did not work.
+    general_error: Option<String>,
+    launch_at_login: bool,
+    form: UploadForm,
+    path: std::path::PathBuf,
+    store: Keyring,
+    /// A Google sign-in or sign-out running on another thread; its result is the new email, or an error.
+    pending: Option<Receiver<Result<Option<String>, String>>>,
+    google_error: Option<String>,
+}
+
+/// Runs the window until it is closed. One window at a time.
+pub fn run_window() {
+    if !crate::platform::claim("Local\\dev.barayuda.snapline.settings") {
+        return; // ponytail: the open window is not brought to the front
+    }
+    let Some(path) = Settings::path() else {
+        return crate::platform::show_error_and_wait("Snapline cannot find your settings folder.");
+    };
+    // Without a keyring, Settings still opens (shortcuts, save folder, auto-hide); keys cannot be saved.
+    let (store, no_keyring) = match Keyring::open() {
+        Ok(store) => (store, None),
+        Err(why) => (Keyring::unavailable(), Some(why)),
+    };
+    let (settings, problem) = Settings::load(&path);
+    let mut form = UploadForm::load(&settings, &store);
+    form.status = problem
+        .map(|p| format!("This file could not be read, so Save is off until it is fixed:\n{p}"))
+        .or_else(|| no_keyring.map(|why| format!("Keys cannot be saved: {why}")))
+        .map(|text| (text, false));
+    let icon = eframe::egui::IconData {
+        rgba: crate::icon::tray_rgba(64, crate::icon::TrayState::Normal),
+        width: 64,
+        height: 64,
+    };
+    let options = eframe::NativeOptions {
+        viewport: eframe::egui::ViewportBuilder::default()
+            .with_title("Snapline settings")
+            .with_inner_size([480.0, 620.0])
+            .with_icon(std::sync::Arc::new(icon)),
+        ..Default::default()
+    };
+    let app = SettingsApp {
+        tab: Tab::General,
+        settings,
+        recording: false,
+        general_error: None,
+        launch_at_login: crate::platform::launch_at_login(),
+        form,
+        path,
+        store,
+        pending: None,
+        google_error: None,
+    };
+    if let Err(e) = eframe::run_native(
+        "Snapline settings",
+        options,
+        Box::new(|_| Ok(Box::new(app))),
+    ) {
+        crate::platform::show_error_and_wait(&format!("Snapline could not open its settings: {e}"));
+    }
+}
+
+impl SettingsApp {
+    fn sign_in(&mut self) {
+        self.form.save(&self.path, &self.store);
+        let client = GoogleClient {
+            id: self.form.client_id.clone(),
+            secret: self.form.client_secret.clone(),
+        };
+        if !client.is_complete() {
+            self.google_error =
+                Some("Paste the Client ID and Client secret above, then click Save.".into());
+            return;
+        }
+        let (tx, rx) = channel();
+        let (path, store) = (self.path.clone(), self.store);
+        std::thread::spawn(move || {
+            let open = |url: &url::Url| open::that(url.as_str()).is_ok();
+            let result = google::sign_in(
+                &UreqTransport::with_system_proxy(crate::platform::system_proxy()),
+                &client,
+                &open,
+                Duration::from_secs(300),
+            )
+            .map_err(|e| e.to_string())
+            .and_then(|signed_in| {
+                secrets::save(&store, Secret::GoogleRefreshToken, &signed_in.refresh_token)?;
+                Settings::update(&path, |s| {
+                    s.google_email = signed_in.email.clone().unwrap_or_default();
+                    s.drive_folder_id.clear();
+                })?;
+                Ok(Some(signed_in.email.unwrap_or_default()))
+            });
+            let _ = tx.send(result);
+        });
+        self.pending = Some(rx);
+        self.google_error = None;
+    }
+
+    fn sign_out(&mut self) {
+        let (tx, rx) = channel();
+        let (path, store) = (self.path.clone(), self.store);
+        std::thread::spawn(move || {
+            if let Some(token) = store.get(Secret::GoogleRefreshToken) {
+                google::sign_out(
+                    &UreqTransport::with_system_proxy(crate::platform::system_proxy()),
+                    &token,
+                );
+            }
+            let result = store.remove(Secret::GoogleRefreshToken).and_then(|()| {
+                Settings::update(&path, |s| {
+                    s.google_email.clear();
+                    s.drive_folder_id.clear();
+                })
+                .map(|_| None)
+            });
+            let _ = tx.send(result);
+        });
+        self.pending = Some(rx);
+        self.google_error = None;
+    }
+
+    /// Picks up a finished sign-in or sign-out.
+    fn poll(&mut self, ctx: &eframe::egui::Context) {
+        let Some(rx) = &self.pending else { return };
+        match rx.try_recv() {
+            Ok(result) => {
+                self.pending = None;
+                match result {
+                    Ok(email) => {
+                        self.form.signed_in = email.is_some();
+                        self.form.email = email.unwrap_or_default();
+                        ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Focus);
+                    }
+                    Err(e) => self.google_error = Some(e),
+                }
+            }
+            Err(_) => ctx.request_repaint_after(Duration::from_millis(200)),
+        }
+    }
+
+    fn s3_fields(&mut self, ui: &mut eframe::egui::Ui) {
+        eframe::egui::Grid::new("s3").num_columns(2).show(ui, |ui| {
+            field(
+                ui,
+                "Endpoint",
+                &mut self.form.endpoint,
+                "https://<account>.r2.cloudflarestorage.com",
+                false,
+            );
+            field(
+                ui,
+                "Region",
+                &mut self.form.region,
+                "auto, or e.g. ap-southeast-1",
+                false,
+            );
+            field(ui, "Bucket", &mut self.form.bucket, "", false);
+            field(ui, "Key prefix", &mut self.form.prefix, "snapline", false);
+            field(
+                ui,
+                "Public URL",
+                &mut self.form.public_url,
+                "https://shots.example.com",
+                false,
+            );
+        });
+        ui.label(
+            eframe::egui::RichText::new(format!(
+                "Keys (stored in {})",
+                crate::platform::SECRET_STORE
+            ))
+            .strong(),
+        );
+        eframe::egui::Grid::new("keys")
+            .num_columns(2)
+            .show(ui, |ui| {
+                field(ui, "Access key ID", &mut self.form.access_key, "", false);
+                field(ui, "Secret access key", &mut self.form.secret_key, "", true);
+            });
+    }
+
+    fn drive_fields(&mut self, ui: &mut eframe::egui::Ui) {
+        ui.label(
+            eframe::egui::RichText::new("Google Cloud OAuth client (type: Desktop app)").strong(),
+        );
+        eframe::egui::Grid::new("google")
+            .num_columns(2)
+            .show(ui, |ui| {
+                field(
+                    ui,
+                    "Client ID",
+                    &mut self.form.client_id,
+                    "Paste: …apps.googleusercontent.com",
+                    false,
+                );
+                field(
+                    ui,
+                    "Client secret",
+                    &mut self.form.client_secret,
+                    "Paste: GOCSPX-…",
+                    true,
+                );
+            });
+        ui.horizontal(|ui| {
+            ui.hyperlink_to("Open Google Cloud Console", CONSOLE);
+            ui.hyperlink_to("Step-by-step guide", GUIDE);
+        });
+    }
+
+    fn account(&mut self, ui: &mut eframe::egui::Ui) {
+        ui.label(eframe::egui::RichText::new("Account").strong());
+        let busy = self.pending.is_some();
+        if self.form.signed_in {
+            let who = if self.form.email.is_empty() {
+                "Google account"
+            } else {
+                &self.form.email
+            };
+            ui.label(format!("Signed in as {who}"));
+            if ui
+                .add_enabled(!busy, eframe::egui::Button::new("Sign out"))
+                .clicked()
+            {
+                self.sign_out();
+            }
+        } else {
+            let ready = !busy && !self.form.client_id.trim().is_empty();
+            if ui
+                .add_enabled(ready, eframe::egui::Button::new("Sign in with Google…"))
+                .clicked()
+            {
+                self.sign_in();
+            }
+        }
+        if busy {
+            ui.spinner();
+        }
+        if let Some(e) = &self.google_error {
+            ui.colored_label(RED, e);
+        }
+        ui.small(
+            "Screenshots go to a \"Snapline\" folder in My Drive and are shared as \"anyone with the link can view\". \
+             Snapline can only see files it created.",
+        );
+    }
+}
+
+impl SettingsApp {
+    fn upload_tab(&mut self, ui: &mut eframe::egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.selectable_value(
+                &mut self.form.target,
+                UploadTarget::S3,
+                "S3-compatible bucket",
+            );
+            ui.selectable_value(&mut self.form.target, UploadTarget::Drive, "Google Drive");
+        });
+        ui.separator();
+        match self.form.target {
+            UploadTarget::S3 => self.s3_fields(ui),
+            UploadTarget::Drive => self.drive_fields(ui),
+        }
+        ui.horizontal(|ui| {
+            if ui.button("Save").clicked() {
+                self.form.save(&self.path, &self.store);
+            }
+            if let Some((text, ok)) = &self.form.status {
+                ui.colored_label(if *ok { GREEN } else { ORANGE }, text);
+            }
+        });
+        ui.separator();
+        match self.form.target {
+            UploadTarget::S3 => {
+                ui.small("Uploads are public to anyone with the link. Do not upload guest or customer data.");
+            }
+            UploadTarget::Drive => self.account(ui),
+        }
+    }
+
+    /// Changes save at once, as on macOS.
+    fn auto_hide_tab(&mut self, ui: &mut eframe::egui::Ui) {
+        let before = self.form.auto_hide;
+        let a = &mut self.form.auto_hide;
+        ui.checkbox(
+            &mut a.enabled,
+            "Hide sensitive data automatically on every capture",
+        );
+        ui.add_space(6.0);
+        ui.label(eframe::egui::RichText::new("What to hide").strong());
+        ui.add_enabled_ui(a.enabled, |ui| {
+            ui.checkbox(&mut a.contact, SensitiveCategory::Contact.title());
+            ui.checkbox(&mut a.payment, SensitiveCategory::Payment.title());
+            ui.checkbox(&mut a.secret, SensitiveCategory::Secret.title());
+            ui.checkbox(&mut a.face, SensitiveCategory::Face.title());
+            #[cfg(target_os = "linux")]
+            ui.label(crate::tesseract_ocr::NO_FACES);
+        });
+        ui.add_space(6.0);
+        ui.small(
+            "Runs on this PC only. Found items are covered with solid black boxes; click a box in the capture to \
+             show it again. This is a safety net, not a guarantee: small, faint or rotated text can be missed, so \
+             check before you share.",
+        );
+        if self.form.auto_hide != before {
+            self.form.save_auto_hide(&self.path);
+        }
+        if let Some((text, false)) = &self.form.status {
+            ui.colored_label(ORANGE, text);
+        }
+    }
+}
+
+impl SettingsApp {
+    /// Saves a General change at once and tells the tray app, as macOS applies Preferences at once.
+    fn save_general(&mut self, change: impl FnOnce(&mut Settings)) {
+        match Settings::update(&self.path, change) {
+            Ok(saved) => {
+                self.settings = saved;
+                self.general_error = None;
+                crate::platform::announce_settings_changed();
+            }
+            Err(e) => self.general_error = Some(e),
+        }
+    }
+
+    /// While recording: the next usable key becomes the capture shortcut; a key Snapline cannot use keeps recording
+    /// and says why; Esc cancels.
+    fn record_shortcut(&mut self, ui: &eframe::egui::Ui) {
+        let pressed = ui.input(|i| {
+            i.events.iter().find_map(|e| match e {
+                eframe::egui::Event::Key {
+                    key,
+                    physical_key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } => Some((*key, *physical_key, *modifiers)),
+                _ => None,
+            })
+        });
+        let Some((key, physical_key, m)) = pressed else {
+            return;
+        };
+        match crate::shortcuts::record(key, physical_key, m) {
+            Recorded::Cancelled => self.recording = false,
+            Recorded::TryAgain(why) => self.general_error = Some(why.into()),
+            Recorded::Shortcut(name)
+                if !crate::shortcuts::is_free(&name, &self.settings.hotkeys) =>
+            {
+                self.general_error =
+                    Some("That shortcut is used by another app. Try another one.".into());
+            }
+            Recorded::Shortcut(name) => {
+                self.recording = false;
+                let print_screen = self.settings.uses_print_screen();
+                self.save_general(|s| s.set_shortcuts(Some(name), print_screen));
+            }
+        }
+    }
+
+    /// The capture-shortcut rows of the General grid: the recorder and the Print Screen box, or on Wayland a hint.
+    fn shortcut_rows(&mut self, ui: &mut eframe::egui::Ui) {
+        // Wayland: the desktop owns the key (portal, or a custom shortcut); a key recorded here does nothing.
+        if crate::platform::is_wayland() {
+            ui.label(crate::settings::wayland_shortcut_hint(
+                &crate::platform::capture_command(),
+            ));
+            ui.end_row();
+        } else {
+            ui.horizontal(|ui| {
+                let label = if self.recording {
+                    "Type a shortcut…".to_owned()
+                } else {
+                    self.settings
+                        .capture_shortcut()
+                        .map_or("None".to_owned(), crate::settings::shortcut_label)
+                };
+                ui.label(eframe::egui::RichText::new(label).strong());
+                if ui
+                    .button(if self.recording { "Cancel" } else { "Record" })
+                    .clicked()
+                {
+                    self.recording = !self.recording;
+                    self.general_error = None;
+                }
+            });
+            ui.end_row();
+
+            ui.label("");
+            let mut print_screen = self.settings.uses_print_screen();
+            if ui.checkbox(&mut print_screen, "Also use PrtScn").changed() {
+                let shortcut = self.settings.capture_shortcut().map(str::to_owned);
+                self.save_general(|s| s.set_shortcuts(shortcut, print_screen));
+            }
+            ui.end_row();
+        }
+    }
+
+    fn general_tab(&mut self, ui: &mut eframe::egui::Ui) {
+        if self.recording {
+            self.record_shortcut(ui);
+        }
+        eframe::egui::Grid::new("general")
+            .num_columns(2)
+            .spacing([12.0, 10.0])
+            .show(ui, |ui| {
+                ui.label("Capture shortcut");
+                self.shortcut_rows(ui);
+
+                ui.label("Clicking the tray icon");
+                let mut click = self.settings.tray_click;
+                ui.horizontal(|ui| {
+                    ui.radio_value(&mut click, TrayClick::Menu, "Opens the menu");
+                    ui.radio_value(&mut click, TrayClick::Capture, "Takes a screenshot");
+                });
+                if click != self.settings.tray_click {
+                    self.save_general(|s| s.tray_click = click);
+                }
+                ui.end_row();
+
+                ui.label("Save screenshots to");
+                ui.horizontal(|ui| {
+                    ui.label(self.settings.save_directory.display().to_string());
+                    if ui.button("Choose…").clicked()
+                        && let Some(dir) = rfd::FileDialog::new()
+                            .set_directory(&self.settings.save_directory)
+                            .pick_folder()
+                    {
+                        self.save_general(|s| s.save_directory = dir);
+                    }
+                });
+                ui.end_row();
+
+                ui.label("Edit with");
+                ui.horizontal(|ui| {
+                    let editor = crate::actions::editor_to_use(&self.settings);
+                    let name = editor
+                        .as_ref()
+                        .and_then(|p| p.file_stem())
+                        .map_or("Paint (default)".to_owned(), |n| {
+                            n.to_string_lossy().into_owned()
+                        });
+                    ui.label(name);
+                    if ui.button("Choose…").clicked()
+                        && let Some(app) = rfd::FileDialog::new()
+                            .add_filter("App", &["exe"])
+                            .pick_file()
+                    {
+                        self.save_general(|s| s.editor = app);
+                    }
+                    if editor.is_some() && ui.button("Use default").clicked() {
+                        self.save_general(|s| s.editor = std::path::PathBuf::new());
+                    }
+                });
+                ui.end_row();
+            });
+        ui.add_space(6.0);
+        let mut downscale = self.settings.downscale;
+        if ui
+            .checkbox(&mut downscale, "Save at 100 % size on high-DPI screens")
+            .changed()
+        {
+            self.save_general(|s| s.downscale = downscale);
+        }
+        let mut launch = self.launch_at_login;
+        if ui.checkbox(&mut launch, "Launch at sign-in").changed() {
+            match crate::platform::set_launch_at_login(launch) {
+                Ok(()) => self.general_error = None,
+                Err(e) => self.general_error = Some(e),
+            }
+            self.launch_at_login = crate::platform::launch_at_login();
+        }
+        if let Some(e) = &self.general_error {
+            ui.colored_label(RED, e);
+        }
+    }
+}
+
+fn field(ui: &mut eframe::egui::Ui, label: &str, value: &mut String, hint: &str, secret: bool) {
+    ui.label(label);
+    ui.add(
+        eframe::egui::TextEdit::singleline(value)
+            .hint_text(hint)
+            .password(secret)
+            .desired_width(f32::INFINITY),
+    );
+    ui.end_row();
+}
+
+impl eframe::App for SettingsApp {
+    fn logic(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
+        self.poll(ctx);
+    }
+
+    fn ui(&mut self, ui: &mut eframe::egui::Ui, _frame: &mut eframe::Frame) {
+        eframe::egui::CentralPanel::default().show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.tab, Tab::General, "General");
+                ui.selectable_value(&mut self.tab, Tab::Upload, "Upload");
+                ui.selectable_value(&mut self.tab, Tab::AutoHide, "Auto-hide");
+            });
+            ui.separator();
+            match self.tab {
+                Tab::General => self.general_tab(ui),
+                Tab::Upload => self.upload_tab(ui),
+                Tab::AutoHide => self.auto_hide_tab(ui),
+            }
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::secrets::MemoryStore;
+
+    fn temp_path(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("snapline-form-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir.join("settings.toml")
+    }
+
+    fn s3_form() -> UploadForm {
+        UploadForm {
+            target: UploadTarget::S3,
+            endpoint: "https://acct.r2.cloudflarestorage.com".into(),
+            bucket: "shots".into(),
+            public_url: "https://shots.example.com".into(),
+            access_key: "AKIDEXAMPLE".into(),
+            secret_key: ["wJalr", "XUtnFEMI", "K7MDENG"].concat(),
+            ..UploadForm::default()
+        }
+    }
+
+    // Review Focus 4.
+    #[test]
+    fn secrets_never_reach_the_settings_file() {
+        let (path, store) = (temp_path("secrets"), MemoryStore::default());
+        let mut form = s3_form();
+        form.client_secret = "client-secret-value".into();
+        form.save(&path, &store);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("shots")
+                && !text.contains("AKIDEXAMPLE")
+                && !text.contains(&form.secret_key),
+            "{text}"
+        );
+        assert!(!text.contains("client-secret-value"));
+        assert_eq!(
+            store.get(Secret::S3SecretKey).as_deref(),
+            Some(form.secret_key.as_str())
+        );
+        assert_eq!(form.status, Some(("Saved".into(), true)));
+    }
+
+    #[test]
+    fn saving_lists_what_is_still_empty() {
+        let (path, store) = (temp_path("empty"), MemoryStore::default());
+        let mut form = UploadForm {
+            secret_key: String::new(),
+            ..s3_form()
+        };
+        form.save(&path, &store);
+        assert_eq!(
+            form.status,
+            Some(("Saved. Still empty: secret access key.".into(), false))
+        );
+        let mut drive = UploadForm {
+            target: UploadTarget::Drive,
+            client_id: "ID".into(),
+            ..UploadForm::default()
+        };
+        drive.save(&path, &store);
+        assert_eq!(
+            drive.status,
+            Some(("Saved. Still empty: Client secret.".into(), false))
+        );
+    }
+
+    #[test]
+    fn a_broken_settings_file_is_reported_and_left_alone() {
+        let (path, store) = (temp_path("broken"), MemoryStore::default());
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "s3_bucket = \"x\n").unwrap();
+        let mut form = s3_form();
+        form.save(&path, &store);
+        let (text, ok) = form.status.clone().unwrap();
+        assert!(!ok && text.contains("could not be read"), "{text}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "s3_bucket = \"x\n");
+    }
+
+    #[test]
+    fn the_form_shows_what_is_saved() {
+        let (path, store) = (temp_path("load"), MemoryStore::default());
+        s3_form().save(&path, &store);
+        let form = UploadForm::load(&Settings::load(&path).0, &store);
+        assert_eq!(
+            (form.bucket.as_str(), form.access_key.as_str()),
+            ("shots", "AKIDEXAMPLE")
+        );
+        assert!(!form.signed_in);
+    }
+
+    #[test]
+    fn auto_hide_changes_save_without_touching_upload_settings() {
+        let (path, store) = (temp_path("auto-hide"), MemoryStore::default());
+        s3_form().save(&path, &store);
+        let mut form = UploadForm::load(&Settings::load(&path).0, &store);
+        form.auto_hide.face = false;
+        form.save_auto_hide(&path);
+        let saved = Settings::load(&path).0;
+        assert!(!saved.auto_hide.face && saved.auto_hide.payment);
+        assert_eq!(saved.s3_bucket, "shots");
+    }
+}

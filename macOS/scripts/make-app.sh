@@ -1,8 +1,8 @@
 #!/bin/zsh
-# Builds build/Snapline.app (arm64, release) and signs it ad hoc.
-# Usage: scripts/make-app.sh [--install]   (--install replaces /Applications/Snapline.app and starts it)
+# Builds macOS/build/Snapline.app (arm64, release) and signs it ad hoc.
+# Usage: macOS/scripts/make-app.sh [--install]   (--install replaces /Applications/Snapline.app and starts it)
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.."   # macOS/; the brand art is shared, in ../Assets
 
 VERSION="1.0.0"
 APP="build/Snapline.app"
@@ -13,8 +13,8 @@ BIN="$(swift build -c release --arch arm64 --show-bin-path)/Snapline"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Snapline"
-# Layered icon (Assets.car for macOS 26+, AppIcon.icns for older). Regenerate art with: swift scripts/brand/make-brand.swift
-xcrun actool "$PWD/Assets/AppIcon.icon" --compile "$PWD/$APP/Contents/Resources" --platform macosx --target-device mac \
+# Layered icon (Assets.car for macOS 26+, AppIcon.icns for older). Regenerate art from the repo root with: swift scripts/brand/make-brand.swift
+xcrun actool "$PWD/../Assets/AppIcon.icon" --compile "$PWD/$APP/Contents/Resources" --platform macosx --target-device mac \
   --minimum-deployment-target 15.0 --app-icon AppIcon --output-partial-info-plist "$PWD/build/icon-partial.plist" >/dev/null  # actool needs absolute paths
 
 cat > "$APP/Contents/Info.plist" <<PLIST

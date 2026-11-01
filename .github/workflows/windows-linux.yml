@@ -1,0 +1,205 @@
+name: windows-linux
+
+on:
+  push:
+    paths: ["windows-linux/**", "fixtures/**", "Assets/icon-1024.png", ".github/workflows/windows-linux.yml"]
+  pull_request:
+    paths: ["windows-linux/**", "fixtures/**", "Assets/icon-1024.png", ".github/workflows/windows-linux.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: windows-linux
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install   # the toolchain named in rust-toolchain.toml
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: windows-linux
+      - run: cargo fmt --check
+      - name: Install Linux build packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && grep -v '^$' linux/apt-packages.txt | xargs sudo apt-get install -y --no-install-recommends
+      - name: Lint and test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+      - name: Linux desktop checks (X server, session bus, keyring)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y --no-install-recommends gnome-keyring
+          xvfb-run -a dbus-run-session -- bash -c \
+            'echo -n ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null && cargo test -p snapline -- --ignored --skip wayland_capture'
+      - name: Wayland session (headless sway with XWayland) - the capture is the real screen
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y --no-install-recommends sway swaybg xwayland
+          dbus-run-session -- linux/wayland-session.sh cargo test -p snapline -- --ignored wayland_capture
+      - name: The Flatpak crate list matches Cargo.lock
+        if: runner.os == 'Linux'
+        run: |
+          pipx run --spec flatpak-cargo-generator==0.1.5 flatpak-cargo-generator Cargo.lock -o /tmp/cargo-sources.json
+          diff -q /tmp/cargo-sources.json linux/cargo-sources.json || { echo "Run: pipx run --spec flatpak-cargo-generator==0.1.5 flatpak-cargo-generator Cargo.lock -o linux/cargo-sources.json"; exit 1; }
+      - name: Package (.deb, AppImage)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y --no-install-recommends desktop-file-utils appstream
+          desktop-file-validate linux/dev.barayuda.Snapline.desktop
+          appstreamcli validate --no-net linux/dev.barayuda.Snapline.metainfo.xml
+          cargo install cargo-deb --version 3.8.0 --locked
+          cargo build --release -p snapline
+          linux/package.sh "$(cargo pkgid -p snapline | sed 's/.*[#@]//')"
+      - name: The .deb installs on a clean Ubuntu and finds its OCR data
+        if: runner.os == 'Linux'
+        run: |
+          docker run --rm -v "$PWD/target/dist:/dist" ubuntu:24.04 bash -c \
+            'apt-get update -qq && apt-get install -y -qq /dist/snapline_*.deb >/dev/null && snapline --version' | tee version.txt
+          grep -q 'English data in /usr/share/tesseract-ocr/5/tessdata' version.txt
+      - name: The AppImage carries Tesseract and its data
+        if: runner.os == 'Linux'
+        run: |
+          cd target/dist
+          ./Snapline-*.AppImage --appimage-extract >/dev/null
+          ls squashfs-root/usr/lib | grep -q libtesseract
+          env -u TESSDATA_PREFIX ./Snapline-*.AppImage --appimage-extract-and-run --version | grep -q 'English data in /tmp/'
+          rm -rf squashfs-root
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'Linux'
+        with:
+          name: snapline-linux-${{ runner.arch }}
+          path: windows-linux/target/dist/*
+          if-no-files-found: error
+      - name: Lint and test (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+      - name: Read Windows' proxy setting
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+          Set-ItemProperty $key -Name ProxyEnable -Value 1 -Type DWord
+          Set-ItemProperty $key -Name ProxyServer -Value '127.0.0.1:3128'
+          Set-ItemProperty $key -Name ProxyOverride -Value '<local>;*.corp.example'
+          try { cargo test -p snapline -- --ignored reads_the_windows_proxy_setting }
+          finally { Set-ItemProperty $key -Name ProxyEnable -Value 0 -Type DWord }
+          if ($LASTEXITCODE) { throw "reading the proxy setting failed" }
+      - name: Build snapline.exe
+        if: runner.os == 'Windows'
+        run: cargo build --release -p snapline
+      - name: Check the exe's version info
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $want = (cargo pkgid -p snapline) -replace '.*[#@]', ''
+          $info = (Get-Item target/release/snapline.exe).VersionInfo
+          "ProductVersion=$($info.ProductVersion) ProductName=$($info.ProductName) want=$want"
+          if ($info.ProductVersion -ne $want -or $info.ProductName -ne 'Snapline') { exit 1 }
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'Windows'
+        with:
+          name: snapline-windows
+          path: windows-linux/target/release/snapline.exe
+          if-no-files-found: error
+      - name: Build the installer, zip and checksums
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./installer/package.ps1 -Version ((cargo pkgid -p snapline) -replace '.*[#@]', '')
+      - name: Install, upgrade, check and uninstall
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem target\dist\Snapline-Setup-*.exe | Select-Object -First 1).FullName
+          $quiet = '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'
+          $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+          $approved = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run'
+          $exe = "$env:LOCALAPPDATA\Programs\Snapline\snapline.exe"
+          function Run-Setup($file, $arguments, $what) {
+            $p = Start-Process $file -ArgumentList $arguments -Wait -PassThru
+            if ($p.ExitCode) { throw "$what exited with code $($p.ExitCode)" }
+          }
+          function Start-Snapline {
+            Start-Process $exe; Start-Sleep -Seconds 3
+            if (-not (Get-Process snapline -ErrorAction SilentlyContinue)) { throw "Snapline did not start" }
+          }
+
+          Run-Setup $setup ($quiet + '/TASKS=startup') 'install'
+          if (-not (Test-Path $exe)) { throw "not installed" }
+          if ((Get-ItemProperty $run).Snapline -ne "`"$exe`"") { throw "Run value is '$((Get-ItemProperty $run).Snapline)'" }
+
+          # Review finding: an upgrade closes a running Snapline itself, and keeps "launch at sign-in" off once
+          # the user turned it off in Snapline.
+          Remove-ItemProperty $run -Name Snapline
+          Start-Snapline
+          Run-Setup $setup $quiet 'upgrade over a running Snapline'
+          if ((Get-ItemProperty $run).Snapline) { throw "the upgrade turned launch at sign-in back on" }
+          if (@(Get-Process snapline -ErrorAction SilentlyContinue).Count -gt 1) { throw "two Snaplines run" }
+
+          # Review finding: uninstall removes a sign-in entry the app wrote, Task Manager's switch, and a running Snapline.
+          Set-ItemProperty $run -Name Snapline -Value "`"$exe`""
+          New-Item $approved -Force | Out-Null
+          Set-ItemProperty $approved -Name Snapline -Value ([byte[]](3,0,0,0,0,0,0,0,0,0,0,0)) -Type Binary
+          Start-Snapline
+          Run-Setup "$env:LOCALAPPDATA\Programs\Snapline\unins000.exe" $quiet 'uninstall'
+          $deadline = (Get-Date).AddSeconds(30)
+          while ((Test-Path $exe) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
+          if (Test-Path $exe) { throw "still installed" }
+          if ((Get-ItemProperty $run).Snapline) { throw "Run value left" }
+          if ((Get-ItemProperty $approved -ErrorAction SilentlyContinue).Snapline) { throw "StartupApproved value left" }
+
+          # Review finding: SHA256SUMS.txt must have Unix line endings, or `sha256sum -c` fails on Mac and Linux.
+          if ([IO.File]::ReadAllBytes("$PWD\target\dist\SHA256SUMS.txt") -contains 13) { throw "SHA256SUMS.txt has CR line endings" }
+          "install, upgrade over a running Snapline, sign-in entries, uninstall, checksums: ok"
+      - name: Package a pre-release version
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./installer/package.ps1 -Version 0.1.0-beta.1 -Out target\dist-pre
+          if (-not (Test-Path target\dist-pre\Snapline-Setup-0.1.0-beta.1.exe)) { throw "no pre-release installer" }
+          "pre-release packaging: ok"
+      - uses: actions/upload-artifact@v7
+        if: runner.os == 'Windows'
+        with:
+          name: snapline-windows-dist
+          path: windows-linux/target/dist/*
+          if-no-files-found: error
+
+  flatpak:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v7
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6.8
+        with:
+          bundle: Snapline.flatpak # the action adds the architecture to the artifact name
+          manifest-path: windows-linux/linux/dev.barayuda.Snapline.yml
+          arch: ${{ matrix.arch }}
+          cache-key: flatpak-builder-${{ matrix.arch }}-${{ hashFiles('windows-linux/Cargo.lock', 'windows-linux/linux/dev.barayuda.Snapline.yml') }}
+      - name: Snapline starts and finds its OCR data
+        run: |
+          # The container has no machine-id and no FUSE (flatpak-builder --run needs rofiles-fuse): give it a
+          # machine-id and run the finished build folder with `flatpak build` instead.
+          [ -s /etc/machine-id ] || tr -d - </proc/sys/kernel/random/uuid >/etc/machine-id
+          flatpak build flatpak_app snapline --version | tee version.txt
+          grep -q 'English data in /app/share/tessdata' version.txt
