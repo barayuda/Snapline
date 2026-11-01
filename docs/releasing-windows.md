@@ -20,7 +20,9 @@ you click Publish.
    `Snapline-Setup-<version>.exe`, `Snapline-<version>-windows-x64.zip` and `SHA256SUMS.txt`, and that the notes read
    right. Install it once on a Windows PC if the release changes the installer.
 4. Click **Publish release**.
-5. After the first release only: publish the website, so its "Download for Windows" link has a release to point to.
+5. After the first release only: the website says "Windows and Linux: coming soon" until then. Bring back the download
+   buttons and the "Install it on Windows" steps (`git show 596fee4:site/index.html` has them), merge that into `main`,
+   then publish the website.
 
    ```bash
    git push origin main:website
