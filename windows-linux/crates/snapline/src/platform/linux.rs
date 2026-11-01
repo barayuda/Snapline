@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, PoisonError};
 
+use super::Signal;
+
 use snapline_overlay::Rect;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, InputFocus};
@@ -93,19 +95,42 @@ pub fn claim_at(path: &Path) -> bool {
     }
 }
 
-const SETTINGS_SOCKET: &str = "dev.barayuda.snapline.settings.sock";
+/// The bytes a signal travels as over the socket.
+impl Signal {
+    #[must_use]
+    pub fn as_bytes(self) -> &'static [u8] {
+        match self {
+            Self::Settings => b"settings",
+            Self::Capture => b"capture",
+        }
+    }
 
-pub fn watch_settings(notify: impl Fn() + Send + 'static) {
-    watch_at(&runtime_dir().join(SETTINGS_SOCKET), notify);
+    #[must_use]
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        [Self::Settings, Self::Capture]
+            .into_iter()
+            .find(|s| s.as_bytes() == bytes)
+    }
+}
+
+const SIGNAL_SOCKET: &str = "dev.barayuda.snapline.settings.sock";
+
+pub fn watch(notify: impl Fn(Signal) + Send + 'static) {
+    watch_at(&runtime_dir().join(SIGNAL_SOCKET), notify);
+}
+
+/// True when a running Snapline got it.
+pub fn send(signal: Signal) -> bool {
+    send_at(&runtime_dir().join(SIGNAL_SOCKET), signal)
 }
 
 pub fn announce_settings_changed() {
-    announce_at(&runtime_dir().join(SETTINGS_SOCKET));
+    send(Signal::Settings);
 }
 
-/// Calls `notify` for every datagram sent to `path`. Only the tray app listens, and it holds the claim, so a socket
-/// file left behind by a crash is safe to replace.
-pub fn watch_at(path: &Path, notify: impl Fn() + Send + 'static) {
+/// Calls `notify` for every signal sent to `path` (anything else is ignored). Only the tray app listens, and it holds
+/// the claim, so a socket file left behind by a crash is safe to replace.
+pub fn watch_at(path: &Path, notify: impl Fn(Signal) + Send + 'static) {
     let _ = std::fs::remove_file(path);
     let Ok(socket) = UnixDatagram::bind(path) else {
         eprintln!("Snapline: settings changes will apply after a restart");
@@ -113,17 +138,17 @@ pub fn watch_at(path: &Path, notify: impl Fn() + Send + 'static) {
     };
     std::thread::spawn(move || {
         let mut buf = [0u8; 16];
-        while socket.recv(&mut buf).is_ok() {
-            notify();
+        while let Ok(n) = socket.recv(&mut buf) {
+            if let Some(signal) = Signal::from_bytes(&buf[..n]) {
+                notify(signal);
+            }
         }
     });
 }
 
-/// Nothing happens when the tray app is not running.
-pub fn announce_at(path: &Path) {
-    if let Ok(socket) = UnixDatagram::unbound() {
-        let _ = socket.send_to(b"settings", path);
-    }
+/// False when nobody is listening: Snapline is not running, or the socket file is left from a crash.
+pub fn send_at(path: &Path, signal: Signal) -> bool {
+    UnixDatagram::unbound().is_ok_and(|socket| socket.send_to(signal.as_bytes(), path).is_ok())
 }
 
 /// A connection to the X server and its root window.
@@ -320,9 +345,9 @@ pub fn install() -> Install {
     Install::Plain(std::env::current_exe().unwrap_or_else(|_| "snapline".into()))
 }
 
-/// The command that opens Snapline's settings, as the user would type it in a terminal.
+/// The command that runs Snapline with `flag` (`--settings`, `--capture`), as the user would type it in a terminal.
 #[must_use]
-pub fn settings_command_for(install: &Install) -> String {
+pub fn command_for(install: &Install, flag: &str) -> String {
     let program = match install {
         Install::Flatpak(id) => format!("flatpak run {id}"),
         Install::Plain(path) if path == Path::new("/usr/bin/snapline") => "snapline".to_owned(),
@@ -335,7 +360,7 @@ pub fn settings_command_for(install: &Install) -> String {
             }
         }
     };
-    format!("{program} --settings")
+    format!("{program} {flag}")
 }
 
 /// The `Exec=` value. Inside quotes the desktop entry spec wants `"`, `` ` ``, `$` and `\` escaped, and `%` doubled.
@@ -542,17 +567,21 @@ mod tests {
     #[test]
     fn the_settings_command_matches_the_install() {
         assert_eq!(
-            settings_command_for(&Install::Flatpak("dev.barayuda.Snapline".into())),
+            command_for(
+                &Install::Flatpak("dev.barayuda.Snapline".into()),
+                "--settings"
+            ),
             "flatpak run dev.barayuda.Snapline --settings"
         );
         assert_eq!(
-            settings_command_for(&Install::AppImage(
-                "/home/me/Apps/Snapline 0.1.AppImage".into()
-            )),
+            command_for(
+                &Install::AppImage("/home/me/Apps/Snapline 0.1.AppImage".into()),
+                "--settings"
+            ),
             "'/home/me/Apps/Snapline 0.1.AppImage' --settings"
         );
         assert_eq!(
-            settings_command_for(&Install::Plain("/usr/bin/snapline".into())),
+            command_for(&Install::Plain("/usr/bin/snapline".into()), "--settings"),
             "snapline --settings"
         );
     }
@@ -566,15 +595,50 @@ mod tests {
     }
 
     #[test]
-    fn an_announcement_reaches_the_watcher() {
-        let path = scratch("settings.sock");
+    fn signals_travel_over_the_socket() {
+        let path = scratch("signals.sock");
         let (tx, rx) = std::sync::mpsc::channel();
-        watch_at(&path, move || {
-            let _ = tx.send(());
+        watch_at(&path, move |s| {
+            let _ = tx.send(s);
         });
-        announce_at(&path);
-        assert!(rx.recv_timeout(std::time::Duration::from_secs(5)).is_ok());
+        assert!(send_at(&path, Signal::Capture));
+        assert!(send_at(&path, Signal::Settings));
+        let got: Vec<Signal> = (0..2)
+            .map(|_| rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap())
+            .collect();
+        assert_eq!(got, [Signal::Capture, Signal::Settings]);
         let _ = std::fs::remove_file(path);
+    }
+
+    // Review Focus 2: nobody listening (not running, or a socket file left by a crash): `--capture` starts Snapline.
+    #[test]
+    fn capture_starts_snapline_when_none_is_running() {
+        assert!(
+            !send_at(&scratch("missing.sock"), Signal::Capture),
+            "no socket file"
+        );
+        let stale = scratch("stale.sock");
+        drop(UnixDatagram::bind(&stale)); // the file stays, nobody reads it
+        assert!(
+            !send_at(&stale, Signal::Capture),
+            "a socket file left by a crash"
+        );
+        let _ = std::fs::remove_file(stale);
+    }
+
+    #[test]
+    fn the_capture_command_matches_the_install() {
+        assert_eq!(
+            command_for(
+                &Install::Flatpak("dev.barayuda.Snapline".into()),
+                "--capture"
+            ),
+            "flatpak run dev.barayuda.Snapline --capture"
+        );
+        assert_eq!(
+            command_for(&Install::Plain("/usr/bin/snapline".into()), "--capture"),
+            "snapline --capture"
+        );
     }
 
     // Phase 6b: Wayland runs through XWayland; only a Wayland session without XWayland is refused.

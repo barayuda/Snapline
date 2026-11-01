@@ -6,23 +6,52 @@ mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::{
     announce_settings_changed, beep, claim, cursor_position, email, launch_at_login,
-    never_activate, reveal, session_problem, set_launch_at_login, shell_verb, watch_settings,
+    never_activate, reveal, send, session_problem, set_launch_at_login, shell_verb, watch,
     work_area,
 };
 #[cfg(target_os = "linux")]
 pub use linux::{keyring_unavailable as linux_keyring_unavailable, take_focus};
 
-/// The command that opens Snapline's settings from a terminal (for when there is no tray to open them from).
-#[must_use]
-pub fn settings_command() -> String {
+/// A message to the running tray app, from the settings window or from `snapline --capture`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Signal {
+    /// `settings.toml` changed.
+    Settings,
+    /// Take a screenshot.
+    Capture,
+}
+
+/// Calls `notify` for each signal to the tray app. Windows has only `Settings` (a named event).
+#[cfg(not(target_os = "linux"))]
+pub fn watch(notify: impl Fn(Signal) + Send + 'static) {
+    watch_settings(move || notify(Signal::Settings));
+}
+
+/// True when a running Snapline got it. Off Linux only `Settings` can be sent.
+#[cfg(not(target_os = "linux"))]
+pub fn send(signal: Signal) -> bool {
+    if signal == Signal::Settings {
+        announce_settings_changed();
+    }
+    false
+}
+
+/// The command that runs Snapline with `flag` from a terminal (for when there is no tray, or for a desktop shortcut).
+fn command(flag: &str) -> String {
     #[cfg(target_os = "linux")]
     {
-        linux::settings_command_for(&linux::install())
+        linux::command_for(&linux::install(), flag)
     }
     #[cfg(not(target_os = "linux"))]
     {
-        "snapline --settings".to_owned()
+        format!("snapline {flag}")
     }
+}
+
+/// The command that opens the settings.
+#[must_use]
+pub fn settings_command() -> String {
+    command("--settings")
 }
 
 /// Where Snapline keeps secrets, by the name users know.

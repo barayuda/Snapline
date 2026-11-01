@@ -78,6 +78,7 @@ struct Capture {
     reason = "independent flags of the running app, not a state machine"
 )]
 pub struct App {
+    capture_at_start: bool,
     proxy: EventLoopProxy<UserEvent>,
     settings: Settings,
     font: TextFont,
@@ -109,8 +110,10 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(proxy: EventLoopProxy<UserEvent>) -> Self {
+    /// `capture_at_start`: take a screenshot once the tray is up (`snapline --capture` with none running).
+    pub fn new(proxy: EventLoopProxy<UserEvent>, capture_at_start: bool) -> Self {
         Self {
+            capture_at_start,
             proxy,
             settings: Settings::default(),
             font: TextFont::system(),
@@ -164,12 +167,18 @@ impl App {
         }));
 
         let proxy = self.proxy.clone();
-        platform::watch_settings(move || {
-            let _ = proxy.send_event(UserEvent::SettingsChanged);
+        platform::watch(move |signal| {
+            let _ = proxy.send_event(match signal {
+                platform::Signal::Settings => UserEvent::SettingsChanged,
+                platform::Signal::Capture => UserEvent::HotKey,
+            });
         });
 
         let labels = self.register_hotkeys();
         self.add_tray(&labels);
+        if self.capture_at_start {
+            let _ = self.proxy.send_event(UserEvent::CaptureNow);
+        }
     }
 
     /// Registers every configured shortcut it can, and returns the labels of those that worked.

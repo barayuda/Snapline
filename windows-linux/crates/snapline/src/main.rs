@@ -56,6 +56,11 @@ fn main() {
     {
         return upload_settings::run_window();
     }
+    // `--capture` (a desktop shortcut on Wayland): the running Snapline takes it, or this one starts and takes it.
+    let capture_at_start = args.iter().any(|a| a == "--capture");
+    if capture_at_start && platform::send(platform::Signal::Capture) {
+        return;
+    }
     if !platform::claim_single_instance() {
         platform::show_error(&format!(
             "Snapline is already running. Look for its icon {}.",
@@ -76,7 +81,7 @@ fn main() {
         Err(e) => return platform::show_error(&format!("Snapline could not start: {e}")),
     };
     event_loop.set_control_flow(ControlFlow::Wait);
-    let mut app = app::App::new(event_loop.create_proxy());
+    let mut app = app::App::new(event_loop.create_proxy(), capture_at_start);
     if let Err(e) = event_loop.run_app(&mut app) {
         platform::show_error(&format!("Snapline stopped: {e}"));
     }
