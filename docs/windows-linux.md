@@ -1,6 +1,6 @@
 # Snapline for Windows and Linux: design
 
-Status: draft, 28 October 2026. Branch `feat/windows-linux-rust`. Linux X11 preview: Phase 6a, 1 November 2026.
+Status: draft, 28 October 2026. Branch `feat/windows-linux-rust`. Linux X11 preview: Phase 6a; Wayland: Phase 6b, 1 November 2026.
 
 ## Goal
 
@@ -39,6 +39,7 @@ app, and Preferences. The macOS app stays in Swift and keeps working as it does 
 | Share and Print on Linux | Share opens an email with the screenshot attached (`xdg-email`); Print opens the image viewer | Linux has no share sheet and no print dialog without GTK. Phase 6a plan |
 | Linux overlay and popups | The overlay is a fullscreen window per monitor; popups are override-redirect | Fullscreen gets the keyboard from the window manager; override-redirect keeps popups out of the taskbar on every window manager. Phase 6a |
 | App ID | `dev.barayuda.Snapline` | Matches the macOS bundle ID. Phase 6a plan |
+| Wayland | Snapline's windows, popups and clipboard through XWayland; capture through the screenshot portal (xcap); the shortcut from the GlobalShortcuts portal, or `snapline --capture` bound in the desktop's settings; GNOME and KDE Plasma first | Reuses the tested X11 code; native Wayland cannot place the overlay or popups. Barayuda, 1 Nov 2026 |
 
 ## Repo layout
 
@@ -60,12 +61,12 @@ site/                      website
 
 | macOS | Windows | Linux |
 |---|---|---|
-| ScreenCaptureKit | `xcap` (Windows.Graphics.Capture / DXGI); per-monitor DPI aware | X11: `xcap`. Wayland: screenshot portal (`ashpd`) |
+| ScreenCaptureKit | `xcap` (Windows.Graphics.Capture / DXGI); per-monitor DPI aware | X11: `xcap`. Wayland: `xcap` through the screenshot portal (wlroots: screencopy) |
 | Overlay (AppKit window per screen) | `winit` borderless topmost window per monitor showing the frozen capture through `softbuffer` | same; Wayland cannot place windows, so one fullscreen window per output |
 | Drawing (Core Graphics) | `tiny-skia` for both the screen and the saved image (one renderer) | same |
 | Vision text recognition | Windows.Media.Ocr (`windows` crate), built into Windows 10/11 | Tesseract 5, linked (`tesseract-rs`); English data from the package |
 | Vision face detection | Windows.Media.FaceAnalysis.FaceDetector | none in Phase 6a; text only |
-| Carbon hotkey | `global-hotkey` (RegisterHotKey); PrtScn and Ctrl+Shift+1 by default | X11: `global-hotkey`. Wayland: global shortcuts portal |
+| Carbon hotkey | `global-hotkey` (RegisterHotKey); PrtScn and Ctrl+Shift+1 by default | X11: `global-hotkey`. Wayland: GlobalShortcuts portal (`ashpd`), or `snapline --capture` |
 | Menu bar item and popovers | `tray-icon`; a borderless popup next to the tray, drawn with tiny-skia | `ksni` (StatusNotifierItem); GNOME needs the AppIndicator extension |
 | Keychain | Credential Manager via `keyring-core` + `windows-native-keyring-store` | Secret Service via `keyring-core` + `zbus-secret-service-keyring-store` |
 | URLSession | `ureq` (rustls with ring) on a worker thread | same |
@@ -105,7 +106,8 @@ Each phase ends with something that works on its own and has its own plan in `do
    - 5c: uploads through a proxy and the Windows certificate store, the minors users notice, safer release workflow,
      README and banner for both platforms. Plan: [docs/plans/2026-10-31-windows-polish.md](plans/2026-10-31-windows-polish.md).
 6. **Linux.** 6a: X11, with .deb, AppImage and Flatpak. Plan: [docs/plans/2026-11-01-linux-x11.md](plans/2026-11-01-linux-x11.md).
-   How to release: [docs/releasing-linux.md](releasing-linux.md). 6b: Wayland (screenshot and global shortcuts portals).
+   How to release: [docs/releasing-linux.md](releasing-linux.md). 6b: Wayland through XWayland and portals.
+   Plan: [docs/plans/2026-11-01-linux-wayland.md](plans/2026-11-01-linux-wayland.md).
 
 ## Risks
 
@@ -126,7 +128,8 @@ Each phase ends with something that works on its own and has its own plan in `do
 - **Networks that inspect TLS with their own root certificate.** ureq trusts the bundled web roots only, so uploads
   fail there. Add the Windows certificate store if users hit it.
 - **SmartScreen.** An unsigned installer shows a warning. Code signing is planned for Phase 5.
-- **Wayland.** Capture and hotkeys depend on portals that not every desktop has. 6a refuses Wayland sessions with a
-  message.
+- **Wayland.** Capture and the shortcut depend on portals: GNOME asks to allow screenshots, and the GlobalShortcuts
+  portal is missing before GNOME 48 (Snapline then explains `snapline --capture`). Windows look soft with fractional
+  scaling (XWayland).
 - **Tray on GNOME.** GNOME shows no tray icons without an extension. Snapline says so once and keeps working from its
   shortcuts.

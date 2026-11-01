@@ -11,7 +11,7 @@
   <description>
     <p>Snapline is a screenshot tool for the tray. Drag over an area, draw on it, then copy, save, upload or email it.
       Emails, card numbers and keys are covered on your computer before anyone else sees them.</p>
-    <p>This preview needs an X11 session.</p>
+    <p>Runs on X11 and Wayland (GNOME, KDE Plasma).</p>
   </description>
   <launchable type="desktop-id">dev.barayuda.Snapline.desktop</launchable>
   <url type="homepage">https://github.com/barayuda/Snapline</url>

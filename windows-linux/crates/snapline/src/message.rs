@@ -14,12 +14,32 @@ pub fn parse(args: &[String]) -> Option<String> {
     args.get(at + 1).cloned()
 }
 
-/// Shows `text` and waits until it is closed. When no window can open, the text goes to stderr.
+/// Shows `text` in its own window, without waiting. When no window can open, the text goes to stderr.
 pub fn show(text: &str) {
-    let shown = std::env::current_exe()
-        .and_then(|exe| std::process::Command::new(exe).args(args(text)).status());
-    if !matches!(shown, Ok(s) if s.success()) {
-        eprintln!("Snapline: {text}");
+    match std::env::current_exe() {
+        Ok(exe) => {
+            let mut window = std::process::Command::new(exe);
+            window.args(args(text));
+            show_using(window, text);
+        }
+        Err(_) => eprintln!("Snapline: {text}"),
+    }
+}
+
+/// Starts `window` (the `--message` window) and returns at once: the window is its own process, so it must not
+/// hold up the tray app (a note at start blocked the first capture). A thread waits for it and prints `text` when
+/// no window could open.
+pub fn show_using(mut window: std::process::Command, text: &str) {
+    let text = text.to_owned();
+    match window.spawn() {
+        Ok(mut child) => {
+            std::thread::spawn(move || {
+                if !child.wait().is_ok_and(|s| s.success()) {
+                    eprintln!("Snapline: {text}");
+                }
+            });
+        }
+        Err(_) => eprintln!("Snapline: {text}"),
     }
 }
 
@@ -80,5 +100,16 @@ mod tests {
         assert_eq!(parse(&args(text)).as_deref(), Some(text));
         assert_eq!(parse(&["--message".into()]), None);
         assert_eq!(parse(&["--settings".into()]), None);
+    }
+
+    // Phase 6b check: the "no tray icons" note blocked Snapline's event loop, so a capture waited until it was
+    // closed. Showing a message must return at once.
+    #[test]
+    fn showing_a_message_does_not_wait_for_it() {
+        let mut slow = std::process::Command::new("sleep");
+        slow.arg("3");
+        let started = std::time::Instant::now();
+        show_using(slow, "Snapline could not save the screenshot.");
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
     }
 }

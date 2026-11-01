@@ -318,7 +318,9 @@ impl App {
         let screens = match capture::capture_all() {
             Ok(s) if !s.is_empty() => s,
             Ok(_) => return,
-            Err(e) => return show_error(&format!("Snapline could not capture the screen: {e}")),
+            Err(e) => {
+                return show_error(&capture::capture_problem(&e, platform::is_wayland()));
+            }
         };
         let frames: Vec<Rect> = screens
             .iter()
@@ -987,9 +989,11 @@ impl ApplicationHandler<UserEvent> for App {
             }
             UserEvent::TrayMissing if !self.told_tray_missing => {
                 self.told_tray_missing = true;
+                let capture = platform::is_wayland().then(platform::capture_command);
                 platform::show_info(&tray::no_tray_note(
                     &self.labels,
                     &platform::settings_command(),
+                    capture.as_deref(),
                 ));
             }
             _ => {}

@@ -92,7 +92,7 @@ jobs:
           rm -f SHA256SUMS-linux-*.txt
           sha256sum -- *.deb *.AppImage *.flatpak >SHA256SUMS.txt
           {
-            echo "Snapline for Linux needs an **X11 session** for now (Wayland is next)."
+            echo "Snapline for Linux runs on X11 and Wayland (GNOME, KDE Plasma). On Wayland, GNOME may ask once to allow screenshots; without a shortcut portal, bind \`snapline --capture\` in your keyboard settings."
             echo
             echo "- **Ubuntu, Debian, Mint:** \`sudo apt install ./snapline_${VERSION}_amd64.deb\` (or \`arm64\`)."
             echo "- **Other distributions:** the AppImage: make it executable and run it."

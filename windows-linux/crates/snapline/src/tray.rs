@@ -53,13 +53,18 @@ pub fn menu(working: &[String], failed: &[String]) -> Vec<Entry> {
     menu
 }
 
-/// Said once when the desktop shows no tray icons. `settings` is the command that opens the settings.
+/// Said once when the desktop shows no tray icons. `settings` is the command that opens the settings; `capture`, in
+/// a Wayland session, the command to bind for a screenshot (the desktop owns the key there).
 #[must_use]
-pub fn no_tray_note(working: &[String], settings: &str) -> String {
-    let take = if working.is_empty() {
-        format!("No capture shortcut works either. Run `{settings}` to choose one.")
-    } else {
-        format!("{} still takes a screenshot.", working.join(" or "))
+pub fn no_tray_note(working: &[String], settings: &str, capture: Option<&str>) -> String {
+    let take = match (capture, working.is_empty()) {
+        (Some(capture), _) => format!(
+            "Your desktop's capture shortcut still works; if it has none, bind `{capture}` in its keyboard settings."
+        ),
+        (None, true) => {
+            format!("No capture shortcut works either. Run `{settings}` to choose one.")
+        }
+        (None, false) => format!("{} still takes a screenshot.", working.join(" or ")),
     };
     format!(
         "Your desktop shows no tray icons, so Snapline's icon is hidden. {take}\n\nOn GNOME, install the \
@@ -289,14 +294,21 @@ mod tests {
     #[test]
     fn no_tray_note_says_how_to_get_the_icon() {
         let settings = "flatpak run dev.barayuda.Snapline --settings";
-        let note = no_tray_note(&["Ctrl+Shift+1".into()], settings);
+        let note = no_tray_note(&["Ctrl+Shift+1".into()], settings, None);
         assert!(
             note.contains("Ctrl+Shift+1")
                 && note.contains("AppIndicator")
                 && note.contains(settings),
             "{note}"
         );
-        let note = no_tray_note(&[], settings);
+        let note = no_tray_note(&[], settings, None);
         assert!(note.contains("choose one"), "{note}");
+        // Phase 6b: on Wayland the desktop owns the key, and the capture command is what to bind.
+        let capture = "snapline --capture";
+        let note = no_tray_note(&[], settings, Some(capture));
+        assert!(
+            note.contains(capture) && !note.contains("No capture shortcut works"),
+            "{note}"
+        );
     }
 }

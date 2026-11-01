@@ -39,7 +39,12 @@ jobs:
         run: |
           sudo apt-get install -y --no-install-recommends gnome-keyring
           xvfb-run -a dbus-run-session -- bash -c \
-            'echo -n ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null && cargo test -p snapline -- --ignored'
+            'echo -n ci | gnome-keyring-daemon --unlock --components=secrets >/dev/null && cargo test -p snapline -- --ignored --skip wayland_capture'
+      - name: Wayland session (headless sway with XWayland) - the capture is the real screen
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y --no-install-recommends sway swaybg xwayland
+          dbus-run-session -- linux/wayland-session.sh cargo test -p snapline -- --ignored wayland_capture
       - name: The Flatpak crate list matches Cargo.lock
         if: runner.os == 'Linux'
         run: |

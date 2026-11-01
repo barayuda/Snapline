@@ -9,7 +9,8 @@ hidden automatically on every capture.
 - **macOS:** Swift 6.4, AppKit, ScreenCaptureKit, Vision, no third-party dependencies. Apple Silicon, macOS 15 or newer.
 - **Windows:** Rust, with Windows' own text recognition and face detection. Windows 10 (1809) or 11, x64.
   [Install it](#windows-preview).
-- **Linux:** preview for X11 desktops (.deb, AppImage, Flatpak), from the same Rust code; Wayland is next.
+- **Linux:** preview for X11 and Wayland desktops (GNOME, KDE Plasma, Xfce and others; .deb, AppImage, Flatpak), from
+  the same Rust code.
   [Install it](#linux-preview).
 - Copy the text out of any screenshot, read on your computer.
 - Written from scratch: Snapline shares no code or artwork with Lightshot.
@@ -165,9 +166,18 @@ To build it: `cd windows-linux && cargo run -p snapline` (it also runs on macOS,
 
 ## Linux (preview)
 
-The Linux version runs on **X11 desktops** (Xfce, KDE Plasma on X11, Cinnamon, MATE, GNOME on Xorg). On Wayland it
-says so and stops; Wayland support (screenshot and shortcut portals) is the next step. It does what the Windows version
-does, with these differences:
+The Linux version runs on **X11** (Xfce, Cinnamon, MATE, KDE Plasma and GNOME on X11) and **Wayland** (GNOME, KDE
+Plasma; wlroots desktops such as sway and Hyprland on a best-effort basis). It does what the Windows version does, with
+these differences:
+
+- **On Wayland** Snapline's windows run through XWayland (installed with GNOME and KDE Plasma), and the desktop takes
+  the screenshot through its screenshot portal:
+  - GNOME may ask once to allow Snapline to take screenshots (Settings → Apps → Snapline → Screenshots).
+  - The capture shortcut comes from the desktop: KDE Plasma 6, GNOME 48 or newer and Hyprland ask you to confirm it
+    once. Elsewhere (GNOME 46 and 47, for example), add a custom shortcut in the desktop's keyboard settings that runs
+    `snapline --capture` (`flatpak run dev.barayuda.Snapline --capture` for the Flatpak, or the AppImage path). It
+    also starts Snapline when it is not running.
+  - With fractional scaling (125 %, 150 %) Snapline's windows look a little soft, as XWayland apps do.
 
 - No face detection yet, so faces are not hidden; text is.
 - Share opens a new email with the screenshot attached (`xdg-email`), as Email does on macOS.
