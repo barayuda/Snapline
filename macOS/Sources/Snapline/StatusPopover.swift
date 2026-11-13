@@ -60,6 +60,16 @@ enum StatusPopover {
         kind = nil
     }
 
+    /// Runs an open or save panel in front of the popover. The popover floats at the menu bar's level, above any
+    /// modal panel, and AppKit resets a panel's own level when it runs, so the popover steps down meanwhile.
+    static func runModal(_ panel: NSSavePanel) -> NSApplication.ModalResponse {
+        let window = popover?.contentViewController?.view.window
+        let level = window?.level
+        window?.level = .normal
+        defer { if let level { window?.level = level } }
+        return panel.runModal()
+    }
+
     static var isShowingReview: Bool { kind == .review && popover?.isShown == true }
     static var isShowingPreferences: Bool { kind == .preferences && popover?.isShown == true }
     /// A popover the user is working in (review or Preferences); a click on the icon closes it instead of capturing.
