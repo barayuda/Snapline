@@ -213,14 +213,14 @@ private struct GeneralTab: View {
         panel.canCreateDirectories = true
         panel.prompt = "Use This Folder"
         panel.directoryURL = URL(fileURLWithPath: saveDirectory)
-        if panel.runModal() == .OK, let url = panel.url { saveDirectory = url.path }
+        if StatusPopover.runModal(panel) == .OK, let url = panel.url { saveDirectory = url.path }
     }
 
     private func chooseEditor() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.application]
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        if panel.runModal() == .OK, let url = panel.url { editorAppPath = url.path }
+        if StatusPopover.runModal(panel) == .OK, let url = panel.url { editorAppPath = url.path }
     }
 }
 
