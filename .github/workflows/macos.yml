@@ -1,0 +1,30 @@
+name: macos
+
+on:
+  push:
+    paths: ["macOS/**", "fixtures/**", "Assets/**", ".github/workflows/macos.yml"]
+  pull_request:
+    paths: ["macOS/**", "fixtures/**", "Assets/**", ".github/workflows/macos.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # Xcode 27.2 (Swift 6.4), the Xcode the app is built with; GitHub's xcode-27 image is still a preview.
+    runs-on: xcode-27
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+    defaults:
+      run:
+        working-directory: macOS
+    steps:
+      - uses: actions/checkout@v7
+      - run: swift --version
+      - run: swift build
+      - run: swift test   # the S3 tests run only with SNAPLINE_S3_TEST_ENDPOINT, which CI does not set
+      - name: Build Snapline.app (release, signed ad hoc as there is no certificate here)
+        run: |
+          scripts/make-app.sh
+          plutil -lint build/Snapline.app/Contents/Info.plist
+          codesign --verify --deep --strict build/Snapline.app
