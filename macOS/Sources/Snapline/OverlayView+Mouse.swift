@@ -106,6 +106,7 @@ extension OverlayView {
 
     private func updateCursor(at p: CGPoint) {
         guard textField == nil else { return }
+        if let cursor = toolbarCursor(at: p) { return cursor.set() }
         guard let sel = selection, sel.width > 2 else { return NSCursor.crosshair.set() }
         if session.tool == nil, let h = SelectionGeometry.handle(at: p, in: sel, tolerance: 6) {
             switch h {
@@ -122,6 +123,15 @@ extension OverlayView {
         } else {
             (session.tool == nil ? NSCursor.crosshair : NSCursor.arrow).set()
         }
+    }
+
+    /// Over a toolbar: the pointing hand on a button, like a link, and the arrow on the bar around it. The overlay's
+    /// tracking area sees these moves too, so without this the crosshair stayed over the buttons.
+    private func toolbarCursor(at p: CGPoint) -> NSCursor? {
+        for case let bar? in [mainBar, drawBar] where !bar.isHidden && bar.frame.contains(p) {
+            return bar.hitTest(p) is NSButton ? .pointingHand : .arrow
+        }
+        return nil
     }
 
     override func scrollWheel(with e: NSEvent) {

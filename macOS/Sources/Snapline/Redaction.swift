@@ -12,12 +12,7 @@ enum Redaction {
         var boxes: [HideBox] = []
         let handler = VNImageRequestHandler(cgImage: image)
 
-        let text = VNRecognizeTextRequest()
-        text.recognitionLevel = .accurate
-        text.usesLanguageCorrection = false  // keep tokens and codes as they are
-        text.recognitionLanguages = RecognitionLanguages.pick(
-            preferred: Locale.preferredLanguages,
-            supported: (try? text.supportedRecognitionLanguages()) ?? ["en-US"])
+        let text = textRequest()
         let faces = VNDetectFaceRectanglesRequest()
 
         var requests: [VNRequest] = []
@@ -39,6 +34,28 @@ enum Redaction {
             boxes.append(HideBox(rect: r.insetBy(dx: -r.width * 0.2, dy: -r.height * 0.3), category: .face))
         }
         return boxes
+    }
+
+    /// Runs both requests once on a tiny blank image, so Vision loads its models now. After a macOS update, or on a
+    /// new install, macOS first compiles them for this app, which took about a minute and kept the first capture on
+    /// "scanning…"; once compiled, a scan takes a fraction of a second.
+    @concurrent
+    static func warmUp() async {
+        guard let context = CGContext(data: nil, width: 64, height: 32, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue),
+              let image = context.makeImage() else { return }
+        try? VNImageRequestHandler(cgImage: image).perform([textRequest(), VNDetectFaceRectanglesRequest()])
+    }
+
+    private static func textRequest() -> VNRecognizeTextRequest {
+        let text = VNRecognizeTextRequest()
+        text.recognitionLevel = .accurate
+        text.usesLanguageCorrection = false  // keep tokens and codes as they are
+        text.recognitionLanguages = RecognitionLanguages.pick(
+            preferred: Locale.preferredLanguages,
+            supported: (try? text.supportedRecognitionLanguages()) ?? ["en-US"])
+        return text
     }
 
     /// Vision returns the box of the whole word for part of a word (for example the value in
