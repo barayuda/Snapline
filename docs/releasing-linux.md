@@ -7,9 +7,9 @@
    checks the version, runs the tests, builds the .deb, the AppImage and the Flatpak for x86_64 and aarch64, and
    creates a **draft** release with `SHA256SUMS.txt`.
 4. Download one package per kind, try it in the VM (`windows-linux/linux/dev-vm.sh desktop`), then publish the draft.
-5. After the first release only: the website says "Windows and Linux: coming soon" until then. Bring back the download
-   buttons (`git show 596fee4:site/index.html` has them), merge that into `main`, then publish the website with
-   `git push origin main:website`.
+5. Update the website: in `site/index.html`, replace the old Linux version everywhere in the "Install it on Linux"
+   section (`linux-v…` link, .deb file name) and in the hero's "Latest versions" line, merge that into `main`, then
+   publish the website with `git push origin main:website`.
 
 To redo a release: delete the draft and the tag (`git push --delete origin linux-v<version>`), fix, and tag again.
 

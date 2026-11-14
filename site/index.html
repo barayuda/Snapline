@@ -49,10 +49,11 @@
           <p class="lede">A free screenshot tool for the Mac menu bar, the Windows tray and Linux panels. Drag over an area, draw on it, then copy, save or share it. Emails, card numbers and keys are covered before anyone else sees them.</p>
           <div class="actions">
             <a class="button primary" href="#get">Build it on your Mac</a>
-            <span class="button soon" aria-disabled="true">Windows and Linux: coming soon</span>
+            <a class="button" href="#get-windows">Download for Windows</a>
+            <a class="button" href="#get-linux">Download for Linux</a>
             <a class="button" href="https://github.com/barayuda/Snapline">See the code on GitHub</a>
           </div>
-          <p class="fineprint">For Macs with Apple silicon, macOS 15 or newer. Versions for Windows 10 and 11, and for Linux desktops (X11 and Wayland), are coming soon. Everything runs on your computer.</p>
+          <p class="fineprint">For Macs with Apple silicon, macOS 15 or newer; Windows 10 (version 1809) or 11, 64-bit; and Linux desktops (X11 and Wayland), 64-bit Intel/AMD or ARM. Latest versions: Windows 0.1.0 and Linux 0.1.0. Everything runs on your computer.</p>
         </div>
 
         <figure class="demo">
@@ -166,6 +167,54 @@ cd Snapline</pre><button class="copy" type="button" data-copy="step-clone">Copy<
           <li>
             <div>
               <p>Press <kbd>⇧</kbd><kbd>⌘</kbd><kbd>1</kbd>. macOS asks once for Screen Recording permission; allow it, and you are set.</p>
+            </div>
+          </li>
+        </ol>
+      </div>
+      <div class="wrap split" id="get-windows">
+        <div>
+          <h2 id="get-windows-title">Install it on Windows</h2>
+          <p class="intro">Version 0.1.0, for Windows 10 (version 1809) or 11, 64-bit. No admin rights needed.</p>
+        </div>
+        <ol class="steps">
+          <li>
+            <div>
+              <p>Download <strong>Snapline-Setup-0.1.0.exe</strong> from the <a href="https://github.com/barayuda/Snapline/releases/tag/windows-v0.1.0">Windows release</a> and run it. A portable zip is there too.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <p>The installer is not signed yet, so Windows SmartScreen asks first: choose <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <p>Press <kbd>PrtScn</kbd> or <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>1</kbd>. Change the shortcut in the tray menu under <strong>Settings</strong>.</p>
+            </div>
+          </li>
+        </ol>
+      </div>
+      <div class="wrap split" id="get-linux">
+        <div>
+          <h2 id="get-linux-title">Install it on Linux</h2>
+          <p class="intro">Version 0.1.0, for X11 and Wayland desktops (GNOME, KDE Plasma, Xfce and others), 64-bit Intel/AMD or ARM.</p>
+        </div>
+        <ol class="steps">
+          <li>
+            <div>
+              <p>Download one package from the <a href="https://github.com/barayuda/Snapline/releases/tag/linux-v0.1.0">Linux release</a>: the <strong>.deb</strong> for Ubuntu, Debian and Mint, the <strong>AppImage</strong> for other distributions, or the <strong>Flatpak</strong> bundle.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <p>Install it. For the .deb (<code>arm64</code> on ARM):</p>
+              <div class="code"><pre id="step-deb">sudo apt install ./snapline_0.1.0_amd64.deb</pre><button class="copy" type="button" data-copy="step-deb">Copy</button></div>
+              <p>Make the AppImage executable and run it, or install the Flatpak with <code>flatpak install --user</code> and the file name.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <p>Press <kbd>PrtScn</kbd> or <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>1</kbd>. On Wayland your desktop asks to confirm the shortcut, or you add one in its keyboard settings that runs <code>snapline --capture</code>.</p>
             </div>
           </li>
         </ol>
