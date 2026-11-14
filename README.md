@@ -15,6 +15,8 @@ hidden automatically on every capture.
 - Copy the text out of any screenshot, read on your computer.
 - Written from scratch: Snapline shares no code or artwork with Lightshot.
 
+What changed in each version: the [changelog](https://snapline.barayuda.web.id/changelog/).
+
 ## Privacy
 
 Snapline is private by design. It has no servers, no accounts of its own, no analytics and no tracking.
@@ -49,6 +51,9 @@ scripts/make-app.sh            # builds build/Snapline.app (arm64, ad-hoc signed
 scripts/make-app.sh --install  # same, then replaces /Applications/Snapline.app and starts it
 open build/Snapline.app
 ```
+
+The version is `VERSION` in `scripts/make-app.sh`. When you change it, add the version to the top of
+`site/changelog/index.html` too.
 
 On the first capture macOS asks for **Screen Recording** permission (System Settings → Privacy & Security → Screen &
 System Audio Recording). If the build is signed ad hoc (no certificate, the default), macOS treats **each rebuild as a

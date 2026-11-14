@@ -21,7 +21,8 @@ you click Publish.
    right. Install it once on a Windows PC if the release changes the installer.
 4. Click **Publish release**.
 5. Update the website: in `site/index.html`, replace the old Windows version everywhere in the "Install it on Windows"
-   section (file name, `windows-v…` link) and in the hero's "Latest versions" line, merge that into `main`, then publish
+   section (file name, `windows-v…` link) and in the hero's "Latest versions" line, add the version to the top of
+   `site/changelog/index.html` (newest first: what changed for users and the date), merge that into `main`, then publish
    the website with `git push origin main:website`.
 
    ```bash
