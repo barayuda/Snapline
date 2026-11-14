@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Snapline changelog</title>
+  <meta name="description" content="What changed in each version of Snapline for Mac, Windows and Linux.">
+  <link rel="canonical" href="https://snapline.barayuda.web.id/changelog/">
+  <link rel="icon" href="/assets/favicon-64.png" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <meta name="theme-color" content="#f6f5fb" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0c0819" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/theme.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="/"><img src="/assets/icon-256.png" alt="" width="36" height="36">Snapline</a>
+      <div class="header-end">
+        <nav class="site-nav" aria-label="Site">
+          <a href="/changelog/" aria-current="page">Changelog</a>
+          <a href="/privacy/">Privacy</a>
+          <a href="/terms/">Terms</a>
+          <a href="https://github.com/barayuda/Snapline">GitHub</a>
+        </nav>
+        <div class="theme" role="group" aria-label="Colour theme">
+          <button type="button" data-theme-choice="system" aria-pressed="true" aria-label="System" title="Follow system"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.75" y="2.5" width="12.5" height="8.5" rx="1.5"/><path d="M5.5 14h5M8 11v3"/></svg></button>
+          <button type="button" data-theme-choice="light" aria-pressed="false" aria-label="Light" title="Light"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1.25v1.5M8 13.25v1.5M1.25 8h1.5M13.25 8h1.5M3.2 3.2l1.06 1.06M11.74 11.74l1.06 1.06M3.2 12.8l1.06-1.06M11.74 4.26l1.06-1.06"/></svg></button>
+          <button type="button" data-theme-choice="dark" aria-pressed="false" aria-label="Dark" title="Dark"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M13.75 9.6A5.75 5.75 0 0 1 6.4 2.25a5.75 5.75 0 1 0 7.35 7.35z"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="doc">
+    <div class="wrap">
+      <h1>Changelog</h1>
+      <p class="updated">What changed in each version, newest first.</p>
+
+      <h2 id="mac-1.0.1">Mac 1.0.1</h2>
+      <p class="date"><time datetime="2026-11-15">15 November 2026</time></p>
+      <ul>
+        <li>The first capture after a macOS update or a new install no longer shows “scanning…” for about a minute: Snapline gets text recognition ready in the background when it starts.</li>
+        <li>The buttons on the capture toolbars show the pointing hand.</li>
+        <li>Clicking the menu bar icon opens the menu. To take a screenshot with a click instead, change “Clicking the menu bar icon” in Preferences → General.</li>
+        <li>Google Drive uploads go to your existing Snapline folder after you sign in again, instead of a new folder each time.</li>
+        <li>The Choose… panels in Preferences open in front of Preferences, not behind it.</li>
+        <li>Installing with <code>macOS/scripts/make-app.sh --install</code> moves the app into Applications instead of copying it, so Spotlight and Launchpad no longer list Snapline twice.</li>
+      </ul>
+
+      <h2 id="windows-0.1.0">Windows 0.1.0</h2>
+      <p class="date"><time datetime="2026-11-15">15 November 2026</time></p>
+      <p>The first version for Windows 10 (version 1809) and 11, 64-bit. <a href="https://github.com/barayuda/Snapline/releases/tag/windows-v0.1.0">Download it</a>.</p>
+      <ul>
+        <li>Lives in the tray. Take a screenshot with <kbd>PrtScn</kbd>, <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>1</kbd> or the tray menu.</li>
+        <li>Draw on it, then copy, save, print, edit, share, upload to your S3 bucket or Google Drive, or search for similar images.</li>
+        <li>Auto-hide and Copy Text use Windows' own text recognition and face detection, on your PC.</li>
+        <li>Installs for your user only, with no admin rights. The installer is not signed yet, so SmartScreen asks first.</li>
+      </ul>
+
+      <h2 id="linux-0.1.0">Linux 0.1.0</h2>
+      <p class="date"><time datetime="2026-11-15">15 November 2026</time></p>
+      <p>The first version for Linux desktops with X11 or Wayland (GNOME, KDE Plasma, Xfce and others), 64-bit Intel/AMD or ARM. <a href="https://github.com/barayuda/Snapline/releases/tag/linux-v0.1.0">Download it</a>.</p>
+      <ul>
+        <li>The same features as on Windows, as a .deb, an AppImage or a Flatpak.</li>
+        <li>Auto-hide and Copy Text use Tesseract, built into Snapline. Faces are not hidden yet.</li>
+        <li>On Wayland the desktop takes the screenshot and owns the shortcut; GNOME may ask once to allow it.</li>
+        <li>The tray icon needs a panel that shows tray icons; on GNOME, the AppIndicator extension.</li>
+      </ul>
+
+      <h2 id="mac-1.0.0">Mac 1.0.0</h2>
+      <p class="date"><time datetime="2026-10-28">28 October 2026</time></p>
+      <p>The first version, for Macs with Apple silicon and macOS 15 or newer.</p>
+      <ul>
+        <li>Lives in the menu bar. Take a screenshot with <kbd>⇧</kbd><kbd>⌘</kbd><kbd>1</kbd>, drag over an area, draw on it, then copy, save, print, edit, email, upload to your S3 bucket or Google Drive, or search for similar images.</li>
+        <li>Auto-hide covers card numbers, keys, passwords, phone numbers, emails and faces, read on your Mac.</li>
+        <li>Copy Text copies the text out of a screenshot.</li>
+      </ul>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <nav aria-label="Footer">
+        <a href="/">Home</a>
+        <a href="/privacy/">Privacy policy</a>
+        <a href="/terms/">Terms of service</a>
+        <a href="https://github.com/barayuda/Snapline">Source code</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

@@ -83,7 +83,7 @@ kbd, code { font-family: var(--mono); font-size: 0.85em; }
 
 @media (max-width: 30rem) {
   .site-header .wrap { flex-wrap: wrap; row-gap: 0.75rem; }
-  .header-end { gap: 1rem; }
+  .header-end { gap: 1rem; flex-wrap: wrap; row-gap: 0.75rem; }
   .site-nav { gap: 1rem; }
 }
 
@@ -280,6 +280,8 @@ kbd {
 .doc .wrap { max-width: 44rem; }
 .doc h1 { font-size: clamp(2.5rem, 5vw, 3.5rem); letter-spacing: -0.04em; margin-bottom: 0.75rem; }
 .doc .updated { color: var(--muted); margin-bottom: 2.5rem; }
+/* Changelog: the release date under each version. */
+.doc .date { color: var(--muted); margin: -0.5rem 0 0.75rem; }
 .doc h2 { font-size: 1.5rem; letter-spacing: -0.02em; margin: 2.5rem 0 0.75rem; }
 .doc ul { padding-left: 1.25rem; margin: 0 0 1em; }
 .doc li { margin-bottom: 0.4rem; }
