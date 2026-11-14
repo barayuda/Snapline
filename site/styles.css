@@ -112,9 +112,6 @@ kbd, code { font-family: var(--mono); font-size: 0.85em; }
 .button:hover { background: var(--surface); text-decoration: none; }
 .button.primary { background: var(--violet); border-color: var(--violet); color: #fff; }
 .button.primary:hover { background: var(--violet-deep); border-color: var(--violet-deep); }
-/* Not available yet: looks like a button, does nothing. */
-.button.soon { color: var(--muted); border-style: dashed; cursor: default; }
-.button.soon:hover { background: none; }
 
 .fineprint { font-size: 0.95rem; color: var(--muted); margin-top: 1rem; }
 
@@ -211,6 +208,8 @@ kbd, code { font-family: var(--mono); font-size: 0.85em; }
 .section { padding-block: clamp(3.5rem, 8vw, 6rem); border-top: 1px solid var(--rule); }
 .section h2 { font-size: clamp(2rem, 4vw, 2.75rem); letter-spacing: -0.035em; margin-bottom: 1rem; max-width: 20ch; }
 .section .intro { color: var(--muted); max-width: 52ch; }
+/* The Get section has one block per system (Mac, Windows, Linux). */
+.section .wrap + .wrap { margin-top: clamp(3.5rem, 8vw, 6rem); }
 
 @media (min-width: 60rem) {
   .split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 4rem; align-items: start; }
