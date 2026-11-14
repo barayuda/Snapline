@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         StatusPopover.button = statusItem.button
         // Prepare Preferences while nothing else is happening, so opening it never stutters.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { Preferences.prepare() }
+        // And Vision's models, so the first scan after a macOS update does not wait on them.
+        Task(priority: .utility) { await Redaction.warmUp() }
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
