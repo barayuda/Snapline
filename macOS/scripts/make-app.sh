@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."   # macOS/; the brand art is shared, in ../Assets
 
-VERSION="1.0.0"
+VERSION="1.0.1"
 APP="build/Snapline.app"
 
 swift build -c release --arch arm64
